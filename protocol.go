@@ -47,6 +47,12 @@ const (
 	MsgLifecycle uint8 = 0x04
 	// MsgClose asks the application to end its Run loop.
 	MsgClose uint8 = 0x05
+	// MsgA11yRequest asks the application for its accessibility tree. The host
+	// sends it only when something is actually reading one, so an app with no
+	// screen reader attached never builds a tree at all.
+	MsgA11yRequest uint8 = 0x07
+	// MsgA11yAction carries the index of the element a screen reader activated.
+	MsgA11yAction uint8 = 0x08
 	// MsgInsets carries the area of the surface the system is drawing over.
 	// It is its own message rather than a Config field because insets change
 	// on their own schedule: the soft keyboard opening does not resize the
@@ -63,6 +69,8 @@ const (
 	MsgTitle uint8 = 0x83
 	// MsgBye tells the host the application ended.
 	MsgBye uint8 = 0x84
+	// MsgA11yTree answers MsgA11yRequest with the accessibility elements.
+	MsgA11yTree uint8 = 0x85
 )
 
 // Touch actions, matching the three MotionEvent actions the host forwards.

@@ -102,6 +102,24 @@ return c.Run(myWidgetTree()) // blocks until the Activity goes away
 and X11, Wayland, Cocoa, Win32 or wasmbox without changing a line above the
 window.
 
+### Accessibility
+
+The application paints pixels, so without help a screen reader sees the
+`SurfaceView` as one opaque rectangle. The host gives it a virtual view
+hierarchy instead: one node per accessible element of the widget tree, with the
+`android.widget.*` class name Android decides its announcements from, the text
+to read, screen bounds and an activation action.
+
+The elements are **pulled, never pushed**. A provider method is only ever called
+when something is reading the tree, so an app with no accessibility service
+attached never builds one — which is also what keeps this from repeating
+go-widgets/window's macOS mistake of rebuilding the whole tree inside the paint
+loop and freezing the machine.
+
+An activation comes back as an ordinary click at the element's centre, so an
+accessibility action goes through the very code a touch does, with no second
+path to drift from the first — the rule the AT-SPI bridge already follows.
+
 ### System bars
 
 An Android window is edge-to-edge from API 35: the surface really is the whole
@@ -182,6 +200,10 @@ Android 15 / arm64:
   still land ([landscape](docs/apk-landscape.png));
 - the surface geometry and display density cross the socket — the demo reports
   `surface: 1080x2400 px, density 263`, the panel's true 2.625×;
+- the accessibility tree is real: `adb shell uiautomator dump`, which reads
+  through the same framework a screen reader does, sees five virtual nodes —
+  three `android.widget.TextView`, one `android.widget.Button` for "Click me",
+  and the counter — each with its text and screen bounds;
 - the system bars do not hide anything: with the device reporting
   `statusBars top=128` and `navigationBars bottom=126`, the tree's first text
   row moves from y=234 to y=337 and its last from y=2160 to y=2063 — the +103
@@ -196,9 +218,17 @@ Deliberate, and none of them protocol-deep:
   Multi-touch, fling and inertial scroll are toolkit work, not host work;
 - **no IME** — a soft keyboard needs `InputConnection` on the host and a text
   model above;
-- **no accessibility** — the host can expose an `AccessibilityNodeProvider` fed
-  by the same tree the AT-SPI, UIA and NSAccessibility bridges already walk;
 
 ## License
 
 BSD-3-Clause. See [LICENSE](LICENSE).
+
+### One open point
+
+`uiautomator dump` reports `clickable="false"` on the button node, while the
+node this host hands the framework carries `isClickable() == true` and three
+actions including `ACTION_CLICK` (verified by logging the node just before
+returning it). So the flag is set and lost somewhere downstream on this AOSP
+image. The activation path itself is proven end to end on the application side:
+a fake host sending `MsgA11yAction` reaches the widget through the ordinary
+click path.
