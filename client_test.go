@@ -8,6 +8,7 @@ package android
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -93,6 +94,10 @@ func (h *fakeHost) next() (uint8, []byte) {
 
 func TestClientRoundTrip(t *testing.T) {
 	const w, h = 200, 120
+	// Force the file fallback so this test can read the surface by path. The
+	// memfd the client uses by default is proven, mapped and read through its
+	// shared descriptor, by TestClientSharesTheFramebufferDescriptor.
+	swap(t, &openMemfd, func() (*os.File, error) { return nil, errors.New("file fallback") })
 	host := newFakeHost(t, w, h)
 	host.serve()
 

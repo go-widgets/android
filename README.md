@@ -42,10 +42,13 @@ server or the Wayland compositor stands.
                     └── MsgFrame{x,y,w,h}: which rectangle changed
 ```
 
-Pixels travel through a file in the app's own storage that both processes map.
-The Go side writes RGBA_8888, which is byte-for-byte what Android's ARGB_8888
-`Bitmap` holds in memory, so the blit is a copy with no conversion — and only
-the damaged rectangle is copied, measured on an Android 15 arm64 device:
+Pixels travel through a **memfd** the application creates and hands to the host
+as an ancillary descriptor on the socket, so they live in memory and never
+dirty page cache the kernel writes to storage. (A file in the app's own storage
+is the fallback where `memfd_create` is missing.) The Go side writes RGBA_8888,
+which is byte-for-byte what Android's ARGB_8888 `Bitmap` holds in memory, so
+the blit is a copy with no conversion — and only the damaged rectangle is
+copied, measured on an Android 15 arm64 device:
 
 | damage on a 1080×2400 surface | whole-surface copy | damage-only copy |
 |---|---|---|
@@ -54,6 +57,17 @@ the damaged rectangle is copied, measured on an Android 15 arm64 device:
 
 (median of 41 and 21 blits; the full-surface case gets faster too because the
 gathered tile is drawn with an offset blit rather than a src/dst rect one.)
+
+The memfd is worth the same kind of measurement — `/proc/meminfo` Dirty, idle
+versus painting, same session and same taps:
+
+| framebuffer | idle | painting | delta |
+|---|---|---|---|
+| file in app storage | 192 kB | 10188 kB | **+9996 kB** |
+| memfd | 188 kB | 140 kB | **−48 kB** |
+
+Ten megabytes of dirty page cache per painting session, written out to flash
+half a minute later, for pixels that are pure scratch — gone.
 
 ## arm64 only, and why
 
@@ -178,9 +192,6 @@ Android 15 / arm64:
 
 Deliberate, and none of them protocol-deep:
 
-- **file-backed mapping** — simple, and it made both sides trivial, but a
-  file-backed `MAP_SHARED` page is writeback-eligible. The upgrade is a memfd
-  passed as an ancillary descriptor over the `LocalSocket`;
 - **single touch** — the protocol carries a pointer id, the host forwards one.
   Multi-touch, fling and inertial scroll are toolkit work, not host work;
 - **no IME** — a soft keyboard needs `InputConnection` on the host and a text
