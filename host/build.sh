@@ -36,7 +36,7 @@ mkdir -p "$out/classes" "$out/lib/$abi"
 
 echo "==> go build (CGO_ENABLED=0 GOOS=android GOARCH=$goarch)"
 (cd "$root" && GOWORK=off CGO_ENABLED=0 GOOS=android GOARCH="$goarch" \
-    go build -trimpath -ldflags=-s -o "$out/lib/$abi/libgwapp.so" ./cmd/gwapp)
+    go build -trimpath -ldflags=-s -o "$out/lib/$abi/libgwapp.so" ${APP:-./cmd/gwapp})
 
 echo "==> javac"
 find "$here/java" -name '*.java' > "$out/sources.txt"

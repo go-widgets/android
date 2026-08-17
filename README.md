@@ -44,7 +44,16 @@ server or the Wayland compositor stands.
 
 Pixels travel through a file in the app's own storage that both processes map.
 The Go side writes RGBA_8888, which is byte-for-byte what Android's ARGB_8888
-`Bitmap` holds in memory, so the blit is a copy with no conversion.
+`Bitmap` holds in memory, so the blit is a copy with no conversion — and only
+the damaged rectangle is copied, measured on an Android 15 arm64 device:
+
+| damage on a 1080×2400 surface | whole-surface copy | damage-only copy |
+|---|---|---|
+| 400×300 (a widget) | 883 µs | **328 µs** |
+| full surface (a plain tree) | 3335 µs | **1957 µs** |
+
+(median of 41 and 21 blits; the full-surface case gets faster too because the
+gathered tile is drawn with an offset blit rather than a src/dst rect one.)
 
 ## arm64 only, and why
 
@@ -105,7 +114,8 @@ adb install host/out/gwhost.apk
 
 `build.sh` runs `go build`, `javac`, `d8`, `aapt2 link`, `zipalign` and
 `apksigner`, in that order, and picks the newest platform and build-tools the
-SDK has installed. Two things it does that are worth knowing:
+SDK has installed. `APP=./cmd/myapp host/build.sh` packages your own
+application instead of the demo. Two things it does that are worth knowing:
 
 - the Go executable ships as `lib/<abi>/libgwapp.so` with
   `extractNativeLibs="true"`, because `nativeLibraryDir` is the one place an
@@ -149,9 +159,6 @@ Android 15 / arm64:
 
 Deliberate, and none of them protocol-deep:
 
-- **whole-buffer copy per frame** — `copyPixelsFromBuffer` copies the whole
-  surface even when the damage is one button. The rectangle already crosses the
-  wire; the host should honour it;
 - **file-backed mapping** — simple, and it made both sides trivial, but a
   file-backed `MAP_SHARED` page is writeback-eligible. The upgrade is a memfd
   passed as an ancillary descriptor over the `LocalSocket`;

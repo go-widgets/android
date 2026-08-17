@@ -72,8 +72,10 @@ public final class GwHostActivity extends Activity implements SurfaceHolder.Call
     private Process app;
 
     private File bufFile;
-    private ByteBuffer pixels;
-    private Bitmap bitmap;
+    private ByteBuffer pixels;      // the shared framebuffer, mapped read-only
+    private int surfaceStride;      // bytes per framebuffer row
+    private ByteBuffer staging;     // contiguous scratch for the damaged rows
+    private Bitmap tile;            // upload target, damage-sized
 
     private int surfaceW, surfaceH, density;
     private volatile boolean running;
@@ -193,18 +195,33 @@ public final class GwHostActivity extends Activity implements SurfaceHolder.Call
              FileChannel ch = fis.getChannel()) {
             pixels = ch.map(FileChannel.MapMode.READ_ONLY, 0, (long) w * h * 4);
         }
-        if (bitmap != null) {
-            bitmap.recycle();
+        surfaceStride = w * 4;
+        if (tile != null) {
+            tile.recycle();
+            tile = null;
         }
-        bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+        staging = null;
     }
 
     /**
-     * Copies the shared framebuffer into the Bitmap and draws the damaged
-     * rectangle onto the Surface.
+     * Copies the damaged rectangle out of the shared framebuffer and draws it
+     * onto the Surface.
+     *
+     * <p>Only the damage is touched. The application already says which
+     * rectangle changed, so copying the whole surface — 8.4 MB on a 1080×2400
+     * panel — to repaint one button was throwing away the one piece of
+     * information the protocol carries. The damaged rows are gathered into a
+     * contiguous staging buffer (the rows are strided in the framebuffer, and
+     * {@code copyPixelsFromBuffer} reads contiguously), then uploaded into a
+     * tile Bitmap of exactly that size and drawn at the damage's origin.
+     *
+     * <p>The tile and the staging buffer are reused across frames and grow
+     * only when a larger damage arrives, so a steady repaint allocates
+     * nothing. Content outside the dirty rectangle is preserved by
+     * {@link SurfaceHolder#lockCanvas(Rect)} itself.
      */
     private synchronized void blit(int x, int y, int w, int h) {
-        if (pixels == null || bitmap == null) {
+        if (pixels == null || w <= 0 || h <= 0) {
             return;
         }
         SurfaceHolder holder = view.getHolder();
@@ -214,12 +231,55 @@ public final class GwHostActivity extends Activity implements SurfaceHolder.Call
             return;
         }
         try {
-            pixels.rewind();
-            bitmap.copyPixelsFromBuffer(pixels);
-            canvas.drawBitmap(bitmap, damage, damage, null);
+            gather(x, y, w, h);
+            canvas.drawBitmap(tile, x, y, null);
         } finally {
             holder.unlockCanvasAndPost(canvas);
         }
+    }
+
+    /**
+     * Gathers the w×h rectangle at (x, y) out of the strided framebuffer into
+     * the tile Bitmap, growing the tile and the staging buffer only when the
+     * damage outgrows them.
+     */
+    private void gather(int x, int y, int w, int h) {
+        int need = w * h * 4;
+        if (tile == null || tile.getAllocationByteCount() < need) {
+            if (tile != null) {
+                tile.recycle();
+            }
+            tile = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+        } else if (tile.getWidth() != w || tile.getHeight() != h) {
+            // A reused tile can be bigger than this damage, and a Bitmap upload
+            // wants exactly its own pixel count: reshape it in place.
+            tile.reconfigure(w, h, Bitmap.Config.ARGB_8888);
+        }
+        int rowBytes = w * 4;
+        int off = y * surfaceStride + x * 4;
+        if (rowBytes == surfaceStride) {
+            // Full-width damage — including the whole surface, which is what a
+            // plain widget tree posts — is ALREADY contiguous in the
+            // framebuffer. Uploading it straight from the mapping avoids a
+            // second copy through staging: gathering row by row here would make
+            // the common case slower than copying everything used to be.
+            pixels.limit(off + need).position(off);
+            tile.copyPixelsFromBuffer(pixels);
+            pixels.clear();
+            return;
+        }
+        if (staging == null || staging.capacity() < need) {
+            staging = ByteBuffer.allocateDirect(need);
+        }
+        staging.clear();
+        staging.limit(need);
+        for (int row = 0; row < h; row++, off += surfaceStride) {
+            pixels.limit(off + rowBytes).position(off);
+            staging.put(pixels);
+        }
+        pixels.clear();
+        staging.rewind();
+        tile.copyPixelsFromBuffer(staging);
     }
 
     /** Announces the current geometry and shared-buffer path to the application. */
