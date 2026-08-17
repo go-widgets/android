@@ -24,6 +24,7 @@ import android.view.WindowManager;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.File;
+import java.io.FileDescriptor;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -41,9 +42,11 @@ import java.nio.channels.FileChannel;
  * pixels (layout, widgets, theme, hit-testing, focus) is Go, unchanged from
  * every other back-end.
  *
- * <p>The pixels travel through a file in the app's own storage that both
- * processes map. The Go side writes RGBA_8888, which is byte-for-byte what
- * Android's ARGB_8888 Bitmap holds in memory, so the blit is a copy with no
+ * <p>The pixels travel through a memfd the application creates and hands over as
+ * an ancillary descriptor on the socket, so they live in memory rather than
+ * dirtying page cache the kernel writes to storage; a file in the app's own
+ * storage is the fallback. The Go side writes RGBA_8888, which is byte-for-byte
+ * what Android's ARGB_8888 Bitmap holds in memory, so the blit is a copy with no
  * conversion.
  */
 public final class GwHostActivity extends Activity implements SurfaceHolder.Callback {
@@ -207,9 +210,20 @@ public final class GwHostActivity extends Activity implements SurfaceHolder.Call
      * mapping makes its writes visible here with no copy and no message.
      */
     private synchronized void mapSurface(int w, int h) throws IOException {
-        try (FileInputStream fis = new FileInputStream(bufFile);
+        long size = (long) w * h * 4;
+        // The application hands its framebuffer over as an ancillary descriptor
+        // attached to the very message that announced it — a memfd, so the
+        // pixels live in memory and never dirty page cache the kernel writes to
+        // flash. getAncillaryFileDescriptors() returns the most recent set and
+        // then null, so it is read once, here.
+        FileDescriptor[] fds = peer.getAncillaryFileDescriptors();
+        try (FileInputStream fis = fds != null && fds.length > 0
+                ? new FileInputStream(fds[0])
+                : new FileInputStream(bufFile);
              FileChannel ch = fis.getChannel()) {
-            pixels = ch.map(FileChannel.MapMode.READ_ONLY, 0, (long) w * h * 4);
+            pixels = ch.map(FileChannel.MapMode.READ_ONLY, 0, size);
+            Log.i(TAG, "surface " + w + "x" + h + " mapped from "
+                    + (fds != null && fds.length > 0 ? "a shared descriptor" : bufFile));
         }
         surfaceStride = w * 4;
         if (tile != null) {

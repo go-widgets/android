@@ -264,20 +264,24 @@ func DecodeFrame(b []byte) (Rect, error) {
 	return Rect{X: int32At(b, 0), Y: int32At(b, 4), W: int32At(b, 8), H: int32At(b, 12)}, nil
 }
 
-// WriteMessage frames one message: a 4-byte big-endian length covering the type
-// byte and the body, then the type byte, then the body. Big-endian keeps the
-// Java host on DataInputStream.readInt with no byte-swapping.
+// FrameMessage returns one framed message: a 4-byte big-endian length covering
+// the type byte and the body, then the type byte, then the body. Big-endian
+// keeps the Java host on DataInputStream.readInt with no byte-swapping.
+//
+// It exists as bytes rather than as writes because a message that carries an
+// ancillary descriptor has to reach the host in ONE sendmsg: split across two
+// writes, the host could attribute the descriptor to the wrong message.
+func FrameMessage(typ uint8, body []byte) []byte {
+	b := make([]byte, 5+len(body))
+	binary.BigEndian.PutUint32(b, uint32(len(body)+1))
+	b[4] = typ
+	copy(b[5:], body)
+	return b
+}
+
+// WriteMessage writes one framed message.
 func WriteMessage(w io.Writer, typ uint8, body []byte) error {
-	hdr := make([]byte, 5)
-	binary.BigEndian.PutUint32(hdr, uint32(len(body)+1))
-	hdr[4] = typ
-	if _, err := w.Write(hdr); err != nil {
-		return err
-	}
-	if len(body) == 0 {
-		return nil
-	}
-	_, err := w.Write(body)
+	_, err := w.Write(FrameMessage(typ, body))
 	return err
 }
 

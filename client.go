@@ -5,9 +5,9 @@
 //go:build linux
 
 // This file is the transport that binds the sovereign codec (protocol.go) to a
-// live Java host: it dials the host's abstract unix socket, maps the shared
-// framebuffer the host named, paints the go-widgets root into it and posts a
-// frame per damaged rectangle. It is CGO-free — the whole Android side of the
+// live Java host: it dials the host's abstract unix socket, creates and maps
+// the shared framebuffer, hands its descriptor over, paints the go-widgets root
+// into it and posts a frame per damaged rectangle. It is CGO-free — the whole Android side of the
 // process is a socket and an mmap, both of which Go makes on its own — so the
 // application binary stays exactly as sovereign as it is on X11 or Wayland.
 package android
@@ -23,6 +23,7 @@ import (
 
 	"github.com/go-widgets/painter"
 	"github.com/go-widgets/toolkit"
+	"golang.org/x/sys/unix"
 )
 
 // EnvSocket names the environment variable the Java host sets to the abstract
@@ -49,11 +50,12 @@ type Client struct {
 	br   *bufio.Reader
 
 	mu       sync.Mutex // guards the mapping and every write to conn
-	buf      []byte     // RGBA framebuffer, mmap'd from the host's file
+	buf      []byte     // RGBA framebuffer, mmap'd from the memfd shared with the host
 	file     *os.File
 	w, h     int
 	density  int
 	insets   Insets
+	shareFD  int  // framebuffer descriptor to hand the host, or -1
 	fullBled bool // lay the root out edge to edge, ignoring the insets
 
 	root       toolkit.Widget
@@ -98,6 +100,7 @@ func Dial(title string, theme *toolkit.Theme) (*Client, error) {
 		br:         bufio.NewReader(conn),
 		configured: make(chan struct{}),
 		done:       make(chan struct{}),
+		shareFD:    -1,
 	}
 	go c.pump()
 	select {
@@ -296,10 +299,14 @@ func (c *Client) reconfigure(cfg Config) error {
 		c.mu.Unlock()
 		return err
 	}
-	w, h := c.w, c.h
+	w, h, fd := c.w, c.h, c.shareFD
 	c.mu.Unlock()
 
-	if err := c.send(MsgReady, EncodeReady(w, h)); err != nil {
+	// The framebuffer descriptor rides WITH the message that announces it, as
+	// SCM_RIGHTS ancillary data: the host reads the descriptors that arrived
+	// with the bytes it just read, so attaching them to any other message
+	// would leave it guessing which mapping they belong to.
+	if err := c.sendFD(MsgReady, EncodeReady(w, h), fd); err != nil {
 		return err
 	}
 	c.configOnce.Do(func() { close(c.configured) })
@@ -315,6 +322,14 @@ var (
 	openBuffer = func(path string) (*os.File, error) {
 		return os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600)
 	}
+	memfdCreate = unix.MemfdCreate
+	openMemfd   = func() (*os.File, error) {
+		fd, err := memfdCreate("gw-surface", unix.MFD_CLOEXEC)
+		if err != nil {
+			return nil, err
+		}
+		return os.NewFile(uintptr(fd), "gw-surface"), nil
+	}
 	truncateBuffer = func(f *os.File, size int) error { return f.Truncate(int64(size)) }
 	mapBuffer      = func(f *os.File, size int) ([]byte, error) {
 		return syscall.Mmap(int(f.Fd()), 0, size,
@@ -323,13 +338,40 @@ var (
 	unmapBuffer = syscall.Munmap
 )
 
-// remapLocked replaces the framebuffer mapping with one of cfg's size. The
-// caller holds c.mu.
-func (c *Client) remapLocked(cfg Config) error {
-	size := 4 * cfg.W * cfg.H
+// openSurfaceLocked opens the framebuffer to paint into: a memfd when the
+// kernel has memfd_create, whose descriptor is then handed to the host over the
+// socket, and otherwise the file the host named in cfg. It reports whether the
+// descriptor has to be shared: a file needs no sharing, the host already knows
+// its path. The caller holds c.mu.
+func (c *Client) openSurfaceLocked(cfg Config, size int) (*os.File, bool, error) {
+	if f, err := openMemfd(); err == nil {
+		return f, true, nil
+	} else if cfg.BufPath == "" {
+		// No memfd and no fallback path: there is nowhere to paint.
+		return nil, false, fmt.Errorf("android: no framebuffer: memfd_create: %w", err)
+	}
 	f, err := openBuffer(cfg.BufPath)
 	if err != nil {
-		return fmt.Errorf("android: open framebuffer: %w", err)
+		return nil, false, fmt.Errorf("android: open framebuffer: %w", err)
+	}
+	return f, false, nil
+}
+
+// remapLocked replaces the framebuffer mapping with one of cfg's size. The
+// caller holds c.mu.
+//
+// The framebuffer is a memfd: an anonymous, memory-backed descriptor the host
+// maps by receiving it over the socket. A file in the app's storage would work
+// too — and is the fallback when a kernel has no memfd_create — but its pages
+// are file-backed, so every frame dirties page cache the kernel then writes to
+// flash. Measured on a 1080x2400 surface: ~10.4 MB of Dirty against 128 kB at
+// rest, flushed to storage about half a minute later, for pixels that are pure
+// scratch.
+func (c *Client) remapLocked(cfg Config) error {
+	size := 4 * cfg.W * cfg.H
+	f, shared, err := c.openSurfaceLocked(cfg, size)
+	if err != nil {
+		return err
 	}
 	if err := truncateBuffer(f, size); err != nil {
 		f.Close()
@@ -342,6 +384,10 @@ func (c *Client) remapLocked(cfg Config) error {
 	}
 	c.unmapLocked()
 	c.buf, c.file = buf, f
+	c.shareFD = -1
+	if shared {
+		c.shareFD = int(f.Fd())
+	}
 	c.w, c.h, c.density = cfg.W, cfg.H, cfg.Density
 	return nil
 }
@@ -415,6 +461,24 @@ func (c *Client) send(typ uint8, body []byte) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return WriteMessage(c.conn, typ, body)
+}
+
+// sendFD writes one framed message with fd attached as SCM_RIGHTS ancillary
+// data, so the host receives the descriptor with the very bytes that announce
+// it. A negative fd, or a transport that cannot carry descriptors (an
+// in-process test pipe), falls back to a plain write: the host then maps the
+// path it named itself.
+func (c *Client) sendFD(typ uint8, body []byte, fd int) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	uc, ok := c.conn.(*net.UnixConn)
+	if fd < 0 || !ok {
+		return WriteMessage(c.conn, typ, body)
+	}
+	// One sendmsg: the framing and the descriptor must not be split across
+	// writes, or the host would attribute the descriptor to another message.
+	_, _, err := uc.WriteMsgUnix(FrameMessage(typ, body), unix.UnixRights(fd), nil)
+	return err
 }
 
 // SetTitle updates the host's window title.

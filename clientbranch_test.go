@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -194,6 +195,7 @@ func TestClientFramebufferFailures(t *testing.T) {
 		install func(t *testing.T)
 	}{
 		{"open", func(t *testing.T) {
+			swap(t, &openMemfd, func() (*os.File, error) { return nil, failure })
 			swap(t, &openBuffer, func(string) (*os.File, error) { return nil, failure })
 		}},
 		{"truncate", func(t *testing.T) {
@@ -385,5 +387,101 @@ func TestClientRejectsMalformedInsets(t *testing.T) {
 	waitDone(t, cl)
 	if cl.runErr == nil {
 		t.Fatal("a malformed MsgInsets should end the session with an error")
+	}
+}
+
+func TestClientSharesTheFramebufferDescriptor(t *testing.T) {
+	// The framebuffer must reach the host as an ancillary descriptor, not as a
+	// path: a memfd has no path, and that is the point — its pages never dirty
+	// page cache the kernel writes to storage.
+	const w, h = 64, 48
+	host := newFakeHost(t, w, h)
+	host.serve()
+	c, err := Dial("test", nil)
+	if err != nil {
+		t.Fatalf("Dial: %v", err)
+	}
+	defer c.Close()
+
+	// Read the announcement WITH its ancillary data, the way the Java host's
+	// getAncillaryFileDescriptors does.
+	uc, ok := host.conn.(*net.UnixConn)
+	if !ok {
+		t.Fatalf("fake host connection is %T, want *net.UnixConn", host.conn)
+	}
+	msg := make([]byte, 64)
+	oob := make([]byte, syscall.CmsgSpace(4))
+	n, oobn, _, _, err := uc.ReadMsgUnix(msg, oob)
+	if err != nil {
+		t.Fatalf("ReadMsgUnix: %v", err)
+	}
+	if n < 5 || msg[4] != MsgReady {
+		t.Fatalf("first message = %v, want MsgReady", msg[:n])
+	}
+	scms, err := syscall.ParseSocketControlMessage(oob[:oobn])
+	if err != nil || len(scms) == 0 {
+		t.Fatalf("no ancillary data with MsgReady: %v", err)
+	}
+	fds, err := syscall.ParseUnixRights(&scms[0])
+	if err != nil || len(fds) != 1 {
+		t.Fatalf("ancillary data = %v err=%v, want exactly one descriptor", fds, err)
+	}
+	defer syscall.Close(fds[0])
+
+	// The descriptor really is the surface: map it and watch the seed frame
+	// appear in it.
+	shared, err := syscall.Mmap(fds[0], 0, 4*w*h, syscall.PROT_READ, syscall.MAP_SHARED)
+	if err != nil {
+		t.Fatalf("mapping the shared descriptor: %v", err)
+	}
+	defer syscall.Munmap(shared)
+	if !allZero(shared) {
+		t.Fatal("the shared surface should still be blank before the first frame")
+	}
+	go func() { _ = c.Run(toolkit.NewVBox()) }()
+	if typ, _ := host.next(); typ != MsgFrame {
+		t.Fatalf("seed message = %#x, want MsgFrame", typ)
+	}
+	if allZero(shared) {
+		t.Fatal("the seed frame did not reach the shared descriptor")
+	}
+	// And it is memory, not a file: a memfd has no name on any filesystem.
+	if _, err := os.Stat(host.path); !os.IsNotExist(err) {
+		t.Fatalf("the fallback file was created after all: %v", err)
+	}
+}
+
+func TestClientFallsBackToTheHostFile(t *testing.T) {
+	// A kernel without memfd_create still has to run: the client then maps the
+	// path the host named, and says so by creating it.
+	swap(t, &openMemfd, func() (*os.File, error) { return nil, errors.New("no memfd here") })
+	host, c := dialConfigured(t, 32, 32)
+	go func() { _ = c.Run(toolkit.NewVBox()) }()
+	if typ, _ := host.next(); typ != MsgFrame {
+		t.Fatalf("seed message = %#x, want MsgFrame", typ)
+	}
+	if _, err := os.Stat(host.path); err != nil {
+		t.Fatalf("the fallback file was not used: %v", err)
+	}
+}
+
+func TestClientWithoutMemfdOrPath(t *testing.T) {
+	// No memfd and no path to fall back to is not a surface at all.
+	swap(t, &openMemfd, func() (*os.File, error) { return nil, errors.New("no memfd here") })
+	host := newFakeHost(t, 16, 16)
+	host.path = ""
+	host.serve()
+	if _, err := Dial("test", nil); err == nil {
+		t.Fatal("Dial should fail with nowhere to paint")
+	}
+}
+
+func TestOpenMemfdReportsAKernelRefusal(t *testing.T) {
+	// A kernel that refuses memfd_create — too old to have it, or out of
+	// descriptors — must be reported, not turned into a nil file.
+	swap(t, &memfdCreate, func(string, int) (int, error) { return -1, errors.New("refused") })
+	if f, err := openMemfd(); err == nil {
+		f.Close()
+		t.Fatal("openMemfd should report a refused memfd_create")
 	}
 }

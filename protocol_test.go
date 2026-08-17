@@ -151,11 +151,9 @@ func (w *errWriter) Write(p []byte) (int, error) {
 }
 
 func TestWriteMessageErrors(t *testing.T) {
+	// Framing is ONE write, so there is one failure to report.
 	if err := WriteMessage(&errWriter{fail: 1}, MsgFrame, []byte{1}); err == nil {
-		t.Fatal("header write failure should error")
-	}
-	if err := WriteMessage(&errWriter{fail: 2}, MsgFrame, []byte{1}); err == nil {
-		t.Fatal("body write failure should error")
+		t.Fatal("a failed write should error")
 	}
 }
 
