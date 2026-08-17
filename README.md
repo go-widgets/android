@@ -46,6 +46,22 @@ Pixels travel through a file in the app's own storage that both processes map.
 The Go side writes RGBA_8888, which is byte-for-byte what Android's ARGB_8888
 `Bitmap` holds in memory, so the blit is a copy with no conversion.
 
+## arm64 only, and why
+
+`android/arm64` is the only Android target Go links **CGO-free**:
+
+```console
+$ CGO_ENABLED=0 GOOS=android GOARCH=arm64 go build ./cmd/gwapp   # fine
+$ CGO_ENABLED=0 GOOS=android GOARCH=arm   go build ./cmd/gwapp
+android/arm requires external (cgo) linking, but cgo is not enabled
+```
+
+`android/amd64` and `android/386` answer the same. So the premise this back-end
+rests on — a sovereign application binary with no C tool chain — holds on
+64-bit ARM alone, which is every Android phone and tablet shipped for years,
+but not the x86 emulator images. CI asserts both halves of that, so the day Go
+lifts the restriction is a red build rather than a silent one.
+
 ## Usage
 
 ```go

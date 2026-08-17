@@ -102,9 +102,17 @@ jobs:
           name: gwhost-apk
           path: host/out/gwhost.apk
 
-  # Cross-build every target an application might ship to. android/* is the
+  # Cross-build every target an application might ship to. android/arm64 is the
   # point of the module; the rest prove the ErrUnsupported stub keeps the
   # module portable.
+  #
+  # android/arm64 is the ONLY Android target here, and that is not an omission:
+  # it is the only one Go can link CGO-free. android/arm, android/amd64 and
+  # android/386 all answer "requires external (cgo) linking, but cgo is not
+  # enabled", so the premise this whole back-end rests on — a sovereign
+  # application binary with no C tool chain — holds on 64-bit ARM alone. The
+  # arch-and-cgo lane below pins that, so the day Go lifts the restriction is
+  # a red build rather than a silent one.
   cross:
     name: cross-build ${{ matrix.goos }}/${{ matrix.goarch }}
     runs-on: ubuntu-latest
@@ -113,7 +121,6 @@ jobs:
       matrix:
         include:
           - { goos: android, goarch: arm64 }
-          - { goos: android, goarch: amd64 }
           - { goos: windows, goarch: amd64 }
           - { goos: windows, goarch: arm64 }
           - { goos: darwin,  goarch: arm64 }
@@ -133,6 +140,30 @@ jobs:
         run: CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build ./...
       - name: Vet (${{ matrix.goos }}/${{ matrix.goarch }})
         run: CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go vet ./...
+
+  # Pin the CGO-free reach of the Android port itself, which is what this
+  # module claims and what a consumer plans a release around: arm64 links with
+  # no C tool chain, and the other three Android targets do not. Asserting both
+  # halves means the day either changes, this lane says so.
+  android-cgo-free:
+    name: android CGO-free reach
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+      - name: arm64 links CGO-free
+        run: CGO_ENABLED=0 GOOS=android GOARCH=arm64 go build -o /dev/null ./cmd/gwapp
+      - name: arm, amd64 and 386 still require cgo
+        run: |
+          for arch in arm amd64 386; do
+            if CGO_ENABLED=0 GOOS=android GOARCH=$arch go build -o /dev/null ./cmd/gwapp 2>/dev/null; then
+              echo "::notice::android/$arch now links CGO-free — widen the cross-build matrix and the README"
+              exit 1
+            fi
+            echo "android/$arch requires cgo, as documented"
+          done
 
   # Validate the module on the six supported 64-bit targets, strictly CGO=0.
   # amd64/arm64 run natively; the rest run under qemu-user.
