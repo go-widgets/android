@@ -485,3 +485,83 @@ func TestOpenMemfdReportsAKernelRefusal(t *testing.T) {
 		t.Fatal("openMemfd should report a refused memfd_create")
 	}
 }
+
+func TestClientServesAndActsOnTheA11yTree(t *testing.T) {
+	host, c := dialConfigured(t, 200, 400)
+	clicked := make(chan struct{}, 1)
+	box := toolkit.NewVBox()
+	box.Append(toolkit.NewLabel("a label"))
+	box.Append(toolkit.NewButton("Click me", func() {
+		select {
+		case clicked <- struct{}{}:
+		default:
+		}
+	}))
+	go func() { _ = c.Run(box) }()
+	host.next() // seed frame
+
+	// The host asks; the application answers. Nothing was published before
+	// the question: an app nobody is reading builds no tree.
+	if err := WriteMessage(host.conn, MsgA11yRequest, nil); err != nil {
+		t.Fatalf("requesting the tree: %v", err)
+	}
+	typ, body := host.next()
+	if typ != MsgA11yTree {
+		t.Fatalf("answer = %#x, want MsgA11yTree", typ)
+	}
+	els, err := DecodeA11yTree(body)
+	if err != nil {
+		t.Fatalf("DecodeA11yTree: %v", err)
+	}
+	if len(els) != 2 || els[0].Name != "a label" || els[1].Name != "Click me" {
+		t.Fatalf("tree = %+v, want the label and the button", els)
+	}
+	if !els[1].Clickable || els[1].Class != "android.widget.Button" {
+		t.Fatalf("button element = %+v, want a clickable Button", els[1])
+	}
+
+	// A screen reader activating the button reaches the widget, through the
+	// same click path an ordinary touch takes.
+	if err := WriteMessage(host.conn, MsgA11yAction, EncodeA11yAction(1)); err != nil {
+		t.Fatalf("sending the action: %v", err)
+	}
+	select {
+	case <-clicked:
+	case <-time.After(testDeadline):
+		t.Fatal("the accessibility activation never reached the widget")
+	}
+	if typ, _ := host.next(); typ != MsgFrame {
+		t.Fatalf("post-action message = %#x, want MsgFrame", typ)
+	}
+}
+
+func TestClientIgnoresAStaleA11yIndex(t *testing.T) {
+	// The host works from a snapshot, so it can name an element the tree no
+	// longer has. That is ignored, not guessed at.
+	host, c := dialConfigured(t, 100, 100)
+	go func() { _ = c.Run(toolkit.NewVBox()) }()
+	host.next() // seed frame
+	for _, i := range []int{-1, 0, 99} {
+		if err := WriteMessage(host.conn, MsgA11yAction, EncodeA11yAction(i)); err != nil {
+			t.Fatalf("sending the action: %v", err)
+		}
+	}
+	// Still alive and answering.
+	if err := WriteMessage(host.conn, MsgA11yRequest, nil); err != nil {
+		t.Fatalf("requesting the tree: %v", err)
+	}
+	if typ, _ := host.next(); typ != MsgA11yTree {
+		t.Fatalf("message after stale actions = %#x, want MsgA11yTree", typ)
+	}
+}
+
+func TestClientRejectsMalformedA11yAction(t *testing.T) {
+	host, cl := dialConfigured(t, 100, 100)
+	if err := WriteMessage(host.conn, MsgA11yAction, []byte{1}); err != nil {
+		t.Fatalf("sending: %v", err)
+	}
+	waitDone(t, cl)
+	if cl.runErr == nil {
+		t.Fatal("a malformed MsgA11yAction should end the session with an error")
+	}
+}

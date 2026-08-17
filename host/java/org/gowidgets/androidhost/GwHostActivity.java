@@ -19,7 +19,9 @@ import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.WindowInsets;
+import android.view.View;
 import android.view.WindowManager;
+import android.view.accessibility.AccessibilityNodeProvider;
 
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
@@ -30,6 +32,11 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * The Java half of the go-widgets Android host.
@@ -62,10 +69,13 @@ public final class GwHostActivity extends Activity implements SurfaceHolder.Call
     private static final int MSG_LIFECYCLE = 0x04;
     private static final int MSG_CLOSE = 0x05;
     private static final int MSG_INSETS = 0x06;
+    private static final int MSG_A11Y_REQUEST = 0x07;
+    private static final int MSG_A11Y_ACTION = 0x08;
     private static final int MSG_READY = 0x81;
     private static final int MSG_FRAME = 0x82;
     private static final int MSG_TITLE = 0x83;
     private static final int MSG_BYE = 0x84;
+    private static final int MSG_A11Y_TREE = 0x85;
 
     private static final int TOUCH_DOWN = 0, TOUCH_UP = 1, TOUCH_MOVE = 2;
     private static final int KEY_DOWN = 0, KEY_UP = 1;
@@ -85,6 +95,9 @@ public final class GwHostActivity extends Activity implements SurfaceHolder.Call
 
     private int surfaceW, surfaceH, density;
     private int insetL, insetT, insetR, insetB;
+    private GwA11yProvider a11y;
+    private final AtomicReference<CountDownLatch> a11yArrived = new AtomicReference<>();
+    private static final long A11Y_TIMEOUT_MS = 400;
     private volatile boolean running;
 
     @Override
@@ -105,6 +118,17 @@ public final class GwHostActivity extends Activity implements SurfaceHolder.Call
             sendInsets();
             return windowInsets;
         });
+
+        // Give the SurfaceView a virtual view hierarchy: the application paints
+        // pixels, so without this a screen reader sees one opaque rectangle.
+        a11y = new GwA11yProvider(view, this);
+        view.setAccessibilityDelegate(new View.AccessibilityDelegate() {
+            @Override
+            public AccessibilityNodeProvider getAccessibilityNodeProvider(View host) {
+                return a11y;
+            }
+        });
+        view.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
 
         DisplayMetrics dm = getResources().getDisplayMetrics();
         density = Math.round(dm.density * 100f);
@@ -195,6 +219,13 @@ public final class GwHostActivity extends Activity implements SurfaceHolder.Call
                 case MSG_TITLE:
                     final String title = new String(body, "UTF-8");
                     runOnUiThread(() -> setTitle(title));
+                    break;
+                case MSG_A11Y_TREE:
+                    a11y.setElements(parseA11yTree(body));
+                    CountDownLatch waiting = a11yArrived.getAndSet(null);
+                    if (waiting != null) {
+                        waiting.countDown();
+                    }
                     break;
                 case MSG_BYE:
                     return;
@@ -346,6 +377,78 @@ public final class GwHostActivity extends Activity implements SurfaceHolder.Call
         putInt(body, 8, insetR);
         putInt(body, 12, insetB);
         send(MSG_INSETS, body);
+    }
+
+    /**
+     * Asks the application for its accessibility tree and waits, briefly, for
+     * the answer.
+     *
+     * <p>Called from the provider, i.e. only when something is actually reading
+     * the tree: an app with no accessibility service attached never builds one.
+     * The wait is what makes a PULL work at all — the answer crosses a socket
+     * and arrives on the reader thread, so returning immediately would hand the
+     * screen reader the previous tree, or on the first call an empty one.
+     * Bounded, because a wedged application must not wedge the accessibility
+     * framework with it.
+     */
+    void requestA11yTree() {
+        CountDownLatch arrived = new CountDownLatch(1);
+        a11yArrived.set(arrived);
+        send(MSG_A11Y_REQUEST, new byte[0]);
+        try {
+            arrived.await(A11Y_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    /** Tells the application a screen reader activated the element at index. */
+    void sendA11yAction(int index) {
+        byte[] body = new byte[4];
+        putInt(body, 0, index);
+        send(MSG_A11Y_ACTION, body);
+    }
+
+    /** Parses a MsgA11yTree body into the provider's elements. */
+    private static List<GwA11yProvider.Element> parseA11yTree(byte[] b) {
+        List<GwA11yProvider.Element> els = new ArrayList<>();
+        int n = readInt(b, 0), off = 4;
+        for (int i = 0; i < n && off + 4 <= b.length; i++) {
+            GwA11yProvider.Element e = new GwA11yProvider.Element();
+            int[] cursor = {off};
+            e.className = readString(b, cursor);
+            e.name = readString(b, cursor);
+            e.value = readString(b, cursor);
+            off = cursor[0];
+            if (off + 17 > b.length) {
+                break;
+            }
+            e.x = readInt(b, off);
+            e.y = readInt(b, off + 4);
+            e.w = readInt(b, off + 8);
+            e.h = readInt(b, off + 12);
+            e.clickable = b[off + 16] != 0;
+            off += 17;
+            els.add(e);
+        }
+        return els;
+    }
+
+    /** Reads a length-prefixed string, advancing the cursor past it. */
+    private static String readString(byte[] b, int[] cursor) {
+        int off = cursor[0];
+        if (off + 4 > b.length) {
+            cursor[0] = b.length;
+            return "";
+        }
+        int n = readInt(b, off);
+        off += 4;
+        if (n < 0 || off + n > b.length) {
+            cursor[0] = b.length;
+            return "";
+        }
+        cursor[0] = off + n;
+        return new String(b, off, n, java.nio.charset.StandardCharsets.UTF_8);
     }
 
     /** Announces the current geometry and shared-buffer path to the application. */

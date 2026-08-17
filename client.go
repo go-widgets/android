@@ -55,8 +55,9 @@ type Client struct {
 	w, h     int
 	density  int
 	insets   Insets
-	shareFD  int  // framebuffer descriptor to hand the host, or -1
-	fullBled bool // lay the root out edge to edge, ignoring the insets
+	shareFD  int           // framebuffer descriptor to hand the host, or -1
+	a11y     []A11yElement // last tree served, so an action can name an element
+	fullBled bool          // lay the root out edge to edge, ignoring the insets
 
 	root       toolkit.Widget
 	dmg        damageRenderer
@@ -238,6 +239,15 @@ func (c *Client) dispatch(typ uint8, body []byte) bool {
 		if changed {
 			c.frame()
 		}
+	case MsgA11yRequest:
+		c.sendA11yTree()
+	case MsgA11yAction:
+		i, err := DecodeA11yAction(body)
+		if err != nil {
+			c.shutdown(err, false)
+			return false
+		}
+		c.activateA11y(i)
 	case MsgLifecycle:
 		if len(body) < 1 {
 			c.shutdown(ErrShortPayload, false)
@@ -445,6 +455,36 @@ func (c *Client) frame() {
 			_ = c.send(MsgFrame, EncodeFrame(cr))
 		}
 	}
+}
+
+// sendA11yTree walks the widget tree and answers the host's request. The walk
+// happens HERE, on demand, and nowhere near the paint loop: a screen reader
+// asking for the tree is rare, a frame is not.
+func (c *Client) sendA11yTree() {
+	c.mu.Lock()
+	els := A11yElements(c.root)
+	c.a11y = els
+	c.mu.Unlock()
+	_ = c.send(MsgA11yTree, EncodeA11yTree(els))
+}
+
+// activateA11y replays a screen reader's activation as an ordinary click at the
+// centre of the element it names, so an accessibility action goes through the
+// very code an ordinary touch does. An index that no longer matches the tree —
+// the host is working from a snapshot — is ignored rather than guessed at.
+func (c *Client) activateA11y(i int) {
+	c.mu.Lock()
+	var el A11yElement
+	ok := i >= 0 && i < len(c.a11y)
+	if ok {
+		el = c.a11y[i]
+	}
+	c.mu.Unlock()
+	if !ok {
+		return
+	}
+	x, y := el.Center()
+	c.deliver([]toolkit.Event{{Kind: toolkit.EventClick, X: x, Y: y}})
 }
 
 // setPaused records an Activity transition.
