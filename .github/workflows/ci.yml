@@ -1,0 +1,173 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Track the latest stable Go (org convention). go.mod floor is 1.26.4.
+jobs:
+  # Build + vet + test the module CGO-free on Linux, then enforce a 100%
+  # statement-coverage gate.
+  #
+  # The transport (client.go) is //go:build linux, and Android IS Linux: the
+  # abstract socket it dials and the shared mapping it paints into are ordinary
+  # Linux facilities, so this lane exercises the REAL back-end — against a fake
+  # host over a real socket and a real mmap — rather than a stand-in. It is also
+  # the only lane that can run the race detector at all: -race needs cgo, which
+  # is the very thing an Android application binary must not have, so the device
+  # lane cannot have it and this one must.
+  test:
+    name: test (linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+      - run: go version
+      - run: CGO_ENABLED=0 go vet ./...
+      - run: CGO_ENABLED=0 go build ./...
+      - name: Gofmt
+        # go vet does NOT check formatting, so drift accumulates silently.
+        # Printing the diff makes a failure actionable rather than a list of
+        # names.
+        run: |
+          drift=$(gofmt -l .)
+          if [ -n "$drift" ]; then
+            echo "::error::not gofmt-clean:"; echo "$drift"
+            gofmt -d .
+            exit 1
+          fi
+      - name: Test (whole module)
+        run: CGO_ENABLED=0 go test ./...
+      - name: Race
+        # Close unmaps the memory a frame may be writing into, and Repaint is
+        # documented as callable from any goroutine: this package's whole risk
+        # is concurrency, so it is raced on every push.
+        env:
+          CGO_ENABLED: "1"
+        run: go test -race -timeout 300s ./...
+      - name: 100% coverage gate
+        env:
+          CGO_ENABLED: "1"
+        run: |
+          go test -race -timeout 300s -coverprofile=cover.out .
+          go tool cover -func=cover.out | tail -n 40
+          cov=$(go tool cover -func=cover.out | tail -1 | awk '{print $3}' | tr -d '%')
+          echo "coverage: ${cov}%"
+          awk -v t="$cov" 'BEGIN { exit !(t+0 >= 100.0) }' || {
+            echo "::error::coverage ${cov}% < 100%"; exit 1; }
+
+  # The off-Android lane: the codec and the ErrUnsupported stub must still
+  # build, vet and pass where there is no host to dial, so an application using
+  # this back-end keeps cross-building on a developer's macOS workstation.
+  darwin-stub:
+    name: darwin (stub)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+      - run: CGO_ENABLED=0 go vet ./...
+      - run: CGO_ENABLED=0 go build ./...
+      - run: CGO_ENABLED=0 go test ./...
+
+  # The APK itself: no Gradle, no Kotlin — javac, d8, aapt2, zipalign and
+  # apksigner against the runner's own SDK. This proves the shipped host
+  # sources and build.sh still produce a signed, installable package, and that
+  # the Go application still cross-builds into it.
+  apk:
+    name: apk (host + application)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+      - name: Build the APK
+        run: ANDROID_HOME=${ANDROID_HOME:-$ANDROID_SDK_ROOT} host/build.sh
+      - name: Verify the signature
+        run: |
+          bt=$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)
+          "$ANDROID_HOME/build-tools/$bt/apksigner" verify --verbose host/out/gwhost.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gwhost-apk
+          path: host/out/gwhost.apk
+
+  # Cross-build every target an application might ship to. android/* is the
+  # point of the module; the rest prove the ErrUnsupported stub keeps the
+  # module portable.
+  cross:
+    name: cross-build ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: android, goarch: arm64 }
+          - { goos: android, goarch: amd64 }
+          - { goos: windows, goarch: amd64 }
+          - { goos: windows, goarch: arm64 }
+          - { goos: darwin,  goarch: arm64 }
+          - { goos: darwin,  goarch: amd64 }
+          - { goos: linux,   goarch: amd64 }
+          - { goos: linux,   goarch: arm64 }
+          - { goos: linux,   goarch: riscv64 }
+          - { goos: linux,   goarch: loong64 }
+          - { goos: linux,   goarch: ppc64le }
+          - { goos: linux,   goarch: s390x }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+      - name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
+        run: CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build ./...
+      - name: Vet (${{ matrix.goos }}/${{ matrix.goarch }})
+        run: CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go vet ./...
+
+  # Validate the module on the six supported 64-bit targets, strictly CGO=0.
+  # amd64/arm64 run natively; the rest run under qemu-user.
+  arch:
+    name: arch ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest,    label: amd64 }
+          - { os: ubuntu-24.04-arm, label: arm64 }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+      - run: go env GOARCH && CGO_ENABLED=0 go test ./...
+
+  arch-qemu:
+    name: arch ${{ matrix.goarch }} (qemu)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goarch: riscv64, qemu: qemu-riscv64-static }
+          - { goarch: loong64, qemu: qemu-loongarch64-static }
+          - { goarch: ppc64le, qemu: qemu-ppc64le-static }
+          - { goarch: s390x,   qemu: qemu-s390x-static }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+      - run: sudo apt-get update && sudo apt-get install -y qemu-user-static
+      - name: Test under qemu (${{ matrix.goarch }})
+        run: CGO_ENABLED=0 GOARCH=${{ matrix.goarch }} go test -exec=${{ matrix.qemu }} ./...

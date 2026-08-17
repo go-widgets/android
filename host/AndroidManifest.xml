@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Copyright (c) the go-widgets/android authors. All rights reserved.
+  SPDX-License-Identifier: BSD-3-Clause
+
+  extractNativeLibs is true on purpose: the go-widgets application ships as
+  lib/arm64-v8a/libgwapp.so and has to exist as a real file the app may execute,
+  not as a mapped region of the APK.
+
+  configChanges keeps the Activity alive across a rotation, so the Go process
+  survives it and simply receives a new geometry, instead of being killed and
+  respawned.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+          package="org.gowidgets.androidhost">
+
+    <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="35" />
+
+    <application android:label="go-widgets"
+                 android:extractNativeLibs="true"
+                 android:hasCode="true">
+        <!--
+          NoActionBar because the go-widgets tree IS the whole window: from
+          Android 15 a targetSdk-35 window is edge-to-edge, so an action bar
+          does not shrink the surface, it covers the top of it.
+        -->
+        <activity android:name=".GwHostActivity"
+                  android:exported="true"
+                  android:theme="@android:style/Theme.Material.NoActionBar"
+                  android:configChanges="orientation|screenSize|keyboardHidden|density">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>
