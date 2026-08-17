@@ -260,3 +260,42 @@ func TestClampRect(t *testing.T) {
 		})
 	}
 }
+
+func TestInsetsRoundTrip(t *testing.T) {
+	want := Insets{Left: 0, Top: 96, Right: 0, Bottom: 132}
+	got, err := DecodeInsets(EncodeInsets(want))
+	if err != nil || got != want {
+		t.Fatalf("round trip = %+v err=%v, want %+v", got, err, want)
+	}
+	if _, err := DecodeInsets(make([]byte, 15)); !errors.Is(err, ErrShortPayload) {
+		t.Fatalf("short err = %v, want ErrShortPayload", err)
+	}
+}
+
+func TestInsetsApply(t *testing.T) {
+	cases := []struct {
+		name string
+		in   Insets
+		want Rect
+	}{
+		{"nothing covering the surface", Insets{}, Rect{W: 100, H: 200}},
+		{"status and navigation bars", Insets{Top: 30, Bottom: 40}, Rect{Y: 30, W: 100, H: 130}},
+		{"a landscape cutout on the left", Insets{Left: 20}, Rect{X: 20, W: 80, H: 200}},
+		{"all four edges", Insets{Left: 5, Top: 6, Right: 7, Bottom: 8}, Rect{X: 5, Y: 6, W: 88, H: 186}},
+		// Insets wider than the surface collapse the area rather than
+		// inverting it: a negative extent would send the tree a rectangle no
+		// layout can honour.
+		{"wider than the surface", Insets{Left: 80, Right: 80}, Rect{X: 80, W: 0, H: 200}},
+		{"taller than the surface", Insets{Top: 150, Bottom: 150}, Rect{Y: 150, W: 100, H: 0}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := c.in.Apply(100, 200); got != c.want {
+				t.Fatalf("Apply = %+v, want %+v", got, c.want)
+			}
+		})
+	}
+	if !(Insets{}).Empty() || (Insets{Top: 1}).Empty() {
+		t.Fatal("Empty should report exactly the zero Insets")
+	}
+}

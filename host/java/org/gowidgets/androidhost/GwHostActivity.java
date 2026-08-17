@@ -10,6 +10,7 @@ import android.graphics.Canvas;
 import android.graphics.Rect;
 import android.net.LocalServerSocket;
 import android.net.LocalSocket;
+import android.os.Build;
 import android.os.Bundle;
 import android.util.DisplayMetrics;
 import android.util.Log;
@@ -17,6 +18,7 @@ import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
+import android.view.WindowInsets;
 import android.view.WindowManager;
 
 import java.io.DataInputStream;
@@ -56,6 +58,7 @@ public final class GwHostActivity extends Activity implements SurfaceHolder.Call
     private static final int MSG_KEY = 0x03;
     private static final int MSG_LIFECYCLE = 0x04;
     private static final int MSG_CLOSE = 0x05;
+    private static final int MSG_INSETS = 0x06;
     private static final int MSG_READY = 0x81;
     private static final int MSG_FRAME = 0x82;
     private static final int MSG_TITLE = 0x83;
@@ -78,6 +81,7 @@ public final class GwHostActivity extends Activity implements SurfaceHolder.Call
     private Bitmap tile;            // upload target, damage-sized
 
     private int surfaceW, surfaceH, density;
+    private int insetL, insetT, insetR, insetB;
     private volatile boolean running;
 
     @Override
@@ -87,6 +91,17 @@ public final class GwHostActivity extends Activity implements SurfaceHolder.Call
         view = new SurfaceView(this);
         view.getHolder().addCallback(this);
         setContentView(view);
+
+        // From API 35 the window is edge-to-edge: the surface is the whole
+        // screen and the bars are painted over it. Ask for the insets so the
+        // application can keep its tree out from under them, and re-send them
+        // whenever they change — a bar auto-hiding, or later a soft keyboard,
+        // moves them without resizing anything.
+        view.setOnApplyWindowInsetsListener((v, windowInsets) -> {
+            readInsets(windowInsets);
+            sendInsets();
+            return windowInsets;
+        });
 
         DisplayMetrics dm = getResources().getDisplayMetrics();
         density = Math.round(dm.density * 100f);
@@ -148,6 +163,7 @@ public final class GwHostActivity extends Activity implements SurfaceHolder.Call
             peer = server.accept();
             out = new DataOutputStream(peer.getOutputStream());
             sendConfig();
+            sendInsets();
             pump(new DataInputStream(peer.getInputStream()));
         } catch (IOException e) {
             Log.w(TAG, "host connection ended: " + e);
@@ -280,6 +296,42 @@ public final class GwHostActivity extends Activity implements SurfaceHolder.Call
         pixels.clear();
         staging.rewind();
         tile.copyPixelsFromBuffer(staging);
+    }
+
+    /**
+     * Reads the system-bar, cutout and keyboard insets out of a WindowInsets.
+     *
+     * <p>{@code WindowInsets.Type} arrived in API 30; below it the deprecated
+     * system-window accessors are the only ones there are, and they report the
+     * same edges for the bars.
+     */
+    @SuppressWarnings("deprecation")
+    private void readInsets(WindowInsets w) {
+        if (Build.VERSION.SDK_INT >= 30) {
+            android.graphics.Insets in = w.getInsets(
+                    WindowInsets.Type.systemBars()
+                            | WindowInsets.Type.displayCutout()
+                            | WindowInsets.Type.ime());
+            insetL = in.left;
+            insetT = in.top;
+            insetR = in.right;
+            insetB = in.bottom;
+            return;
+        }
+        insetL = w.getSystemWindowInsetLeft();
+        insetT = w.getSystemWindowInsetTop();
+        insetR = w.getSystemWindowInsetRight();
+        insetB = w.getSystemWindowInsetBottom();
+    }
+
+    /** Tells the application which edges of its surface the system draws over. */
+    private void sendInsets() {
+        byte[] body = new byte[16];
+        putInt(body, 0, insetL);
+        putInt(body, 4, insetT);
+        putInt(body, 8, insetR);
+        putInt(body, 12, insetB);
+        send(MSG_INSETS, body);
     }
 
     /** Announces the current geometry and shared-buffer path to the application. */

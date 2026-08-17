@@ -88,6 +88,20 @@ return c.Run(myWidgetTree()) // blocks until the Activity goes away
 and X11, Wayland, Cocoa, Win32 or wasmbox without changing a line above the
 window.
 
+### System bars
+
+An Android window is edge-to-edge from API 35: the surface really is the whole
+screen, and the status bar, the navigation bar, a display cutout and the soft
+keyboard are painted **on top of it** rather than shrinking it. The tree is
+therefore laid out inside what they leave, so its first and last rows are not
+hidden; the margins are still painted in the theme background, so the bars sit
+on the app's own colour.
+
+`Client.Insets()` reports those four edges, and `Client.SetFullBleed(true)`
+opts back out to the whole surface — for a root that means to reach under the
+bars (a photo, a map, a video) and takes responsibility for keeping anything
+readable out of the way.
+
 ## Layout
 
     protocol.go       the sovereign codec — wire messages, framing, and the
@@ -153,7 +167,12 @@ Android 15 / arm64:
   the surface is remapped at 2400×1080, the tree is laid out again, and taps
   still land ([landscape](docs/apk-landscape.png));
 - the surface geometry and display density cross the socket — the demo reports
-  `surface: 1080x2400 px, density 263`, the panel's true 2.625×.
+  `surface: 1080x2400 px, density 263`, the panel's true 2.625×;
+- the system bars do not hide anything: with the device reporting
+  `statusBars top=128` and `navigationBars bottom=126`, the tree's first text
+  row moves from y=234 to y=337 and its last from y=2160 to y=2063 — the +103
+  and −97 a five-child box redistributed over the safe area gives, to the pixel
+  ([without insets](docs/apk-portrait.png) vs [with](docs/apk-insets.png)).
 
 ## Known gaps
 
@@ -168,8 +187,6 @@ Deliberate, and none of them protocol-deep:
   model above;
 - **no accessibility** — the host can expose an `AccessibilityNodeProvider` fed
   by the same tree the AT-SPI, UIA and NSAccessibility bridges already walk;
-- **no insets** — the window is edge-to-edge from API 35, so the system bars
-  are drawn over the surface.
 
 ## License
 

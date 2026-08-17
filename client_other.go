@@ -31,6 +31,12 @@ func (c *Client) Size() (int, int) { return 0, 0 }
 // Density reports no display.
 func (c *Client) Density() int { return 0 }
 
+// Insets reports nothing covering a surface that does not exist.
+func (c *Client) Insets() Insets { return Insets{} }
+
+// SetFullBleed has no surface to bleed over.
+func (c *Client) SetFullBleed(bool) {}
+
 // Repaint has nothing to repaint.
 func (c *Client) Repaint() {}
 
