@@ -48,11 +48,13 @@ type Client struct {
 	conn net.Conn
 	br   *bufio.Reader
 
-	mu      sync.Mutex // guards the mapping and every write to conn
-	buf     []byte     // RGBA framebuffer, mmap'd from the host's file
-	file    *os.File
-	w, h    int
-	density int
+	mu       sync.Mutex // guards the mapping and every write to conn
+	buf      []byte     // RGBA framebuffer, mmap'd from the host's file
+	file     *os.File
+	w, h     int
+	density  int
+	insets   Insets
+	fullBled bool // lay the root out edge to edge, ignoring the insets
 
 	root       toolkit.Widget
 	dmg        damageRenderer
@@ -135,6 +137,29 @@ func (c *Client) Density() int {
 	return c.density
 }
 
+// Insets returns the margin of the surface the system is drawing over: the
+// status and navigation bars, a display cutout, the soft keyboard. By default
+// the widget tree is laid out inside what they leave; see [Client.SetFullBleed].
+func (c *Client) Insets() Insets {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.insets
+}
+
+// SetFullBleed lays the widget tree out over the WHOLE surface, insets and
+// all. It is for a root that means to reach under the system bars — a photo, a
+// map, a video — and is then responsible for keeping anything readable out of
+// the area [Client.Insets] reports.
+func (c *Client) SetFullBleed(on bool) {
+	c.mu.Lock()
+	changed := c.fullBled != on
+	c.fullBled = on
+	c.mu.Unlock()
+	if changed {
+		c.frame()
+	}
+}
+
 // String identifies the surface for debugging.
 func (c *Client) String() string {
 	w, h := c.Size()
@@ -197,6 +222,19 @@ func (c *Client) dispatch(typ uint8, body []byte) bool {
 			return false
 		}
 		c.deliver(MapKey(k))
+	case MsgInsets:
+		ins, err := DecodeInsets(body)
+		if err != nil {
+			c.shutdown(err, false)
+			return false
+		}
+		c.mu.Lock()
+		changed := c.insets != ins
+		c.insets = ins
+		c.mu.Unlock()
+		if changed {
+			c.frame()
+		}
 	case MsgLifecycle:
 		if len(body) < 1 {
 			c.shutdown(ErrShortPayload, false)
@@ -333,13 +371,23 @@ func (c *Client) frame() {
 	w, h := c.w, c.h
 	p := painter.NewPixelPainter(c.buf, w, h)
 	full := toolkit.Rect{X: 0, Y: 0, W: w, H: h}
+	// The tree is laid out inside the area the system is NOT drawing over, so
+	// its first and last rows are not hidden behind the status and navigation
+	// bars of an edge-to-edge window. The margins are still painted — in the
+	// theme background, so the bars sit on the app's own colour rather than on
+	// whatever the previous frame left there.
+	area := full
+	if !c.fullBled {
+		a := c.insets.Apply(w, h)
+		area = toolkit.Rect{X: a.X, Y: a.Y, W: a.W, H: a.H}
+	}
 	var rects []toolkit.Rect
 	if c.dmg != nil {
-		c.root.SetBounds(full)
+		c.root.SetBounds(area)
 		rects = c.dmg.RenderDamaged(p, c.theme)
 	} else {
 		p.FillRect(full, c.theme.Background)
-		c.root.SetBounds(full)
+		c.root.SetBounds(area)
 		c.root.Draw(p, c.theme)
 		rects = []toolkit.Rect{full}
 	}

@@ -249,10 +249,19 @@ type recordingRoot struct {
 	toolkit.Rect
 	events chan toolkit.Event
 	keys   chan string
+	bounds chan toolkit.Rect
 }
 
-func (r *recordingRoot) Bounds() toolkit.Rect                 { return r.Rect }
-func (r *recordingRoot) SetBounds(b toolkit.Rect)             { r.Rect = b }
+func (r *recordingRoot) Bounds() toolkit.Rect { return r.Rect }
+func (r *recordingRoot) SetBounds(b toolkit.Rect) {
+	r.Rect = b
+	if r.bounds != nil {
+		select {
+		case r.bounds <- b:
+		default:
+		}
+	}
+}
 func (r *recordingRoot) Draw(painter.Painter, *toolkit.Theme) {}
 func (r *recordingRoot) HitTest(px, py int) bool              { return true }
 
@@ -312,5 +321,69 @@ func TestReconfigureReportsASendFailure(t *testing.T) {
 	err := c.reconfigure(Config{W: 4, H: 4, BufPath: filepath.Join(t.TempDir(), "surface.rgba")})
 	if err == nil {
 		t.Fatal("reconfigure should report a failed handshake write")
+	}
+}
+
+func TestClientLaysOutInsideTheInsets(t *testing.T) {
+	const w, h = 200, 400
+	host, c := dialConfigured(t, w, h)
+	bounds := make(chan toolkit.Rect, 4)
+	go func() { _ = c.Run(&recordingRoot{bounds: bounds}) }()
+	host.next() // seed frame
+	if got := <-bounds; got != (toolkit.Rect{W: w, H: h}) {
+		t.Fatalf("seed bounds = %+v, want the whole surface", got)
+	}
+
+	// The system announces the bars: the tree must be laid out inside what
+	// they leave, or its first and last rows are behind them.
+	ins := Insets{Top: 30, Bottom: 50}
+	if err := WriteMessage(host.conn, MsgInsets, EncodeInsets(ins)); err != nil {
+		t.Fatalf("sending insets: %v", err)
+	}
+	select {
+	case got := <-bounds:
+		want := toolkit.Rect{X: 0, Y: 30, W: w, H: h - 80}
+		if got != want {
+			t.Fatalf("bounds under insets = %+v, want %+v", got, want)
+		}
+	case <-time.After(testDeadline):
+		t.Fatal("the insets never reached the layout")
+	}
+	if got := c.Insets(); got != ins {
+		t.Fatalf("Insets() = %+v, want %+v", got, ins)
+	}
+	if typ, body := host.next(); typ != MsgFrame {
+		t.Fatalf("post-insets message = %#x, want MsgFrame", typ)
+	} else if r, _ := DecodeFrame(body); r != (Rect{W: w, H: h}) {
+		// The margins are repainted too, so the bars sit on the app's colour.
+		t.Fatalf("post-insets damage = %+v, want the whole surface", r)
+	}
+
+	// Re-announcing the SAME insets changes nothing, so a host that resends
+	// them on every layout pass does not cost a frame.
+	if err := WriteMessage(host.conn, MsgInsets, EncodeInsets(ins)); err != nil {
+		t.Fatalf("resending insets: %v", err)
+	}
+	// A full-bleed root opts back out to the whole surface.
+	c.SetFullBleed(true)
+	select {
+	case got := <-bounds:
+		if got != (toolkit.Rect{W: w, H: h}) {
+			t.Fatalf("full-bleed bounds = %+v, want the whole surface", got)
+		}
+	case <-time.After(testDeadline):
+		t.Fatal("SetFullBleed never re-laid the tree out")
+	}
+	c.SetFullBleed(true) // idempotent: no second frame
+}
+
+func TestClientRejectsMalformedInsets(t *testing.T) {
+	host, cl := dialConfigured(t, 100, 100)
+	if err := WriteMessage(host.conn, MsgInsets, []byte{1, 2}); err != nil {
+		t.Fatalf("sending: %v", err)
+	}
+	waitDone(t, cl)
+	if cl.runErr == nil {
+		t.Fatal("a malformed MsgInsets should end the session with an error")
 	}
 }

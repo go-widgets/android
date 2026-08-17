@@ -47,6 +47,11 @@ const (
 	MsgLifecycle uint8 = 0x04
 	// MsgClose asks the application to end its Run loop.
 	MsgClose uint8 = 0x05
+	// MsgInsets carries the area of the surface the system is drawing over.
+	// It is its own message rather than a Config field because insets change
+	// on their own schedule: the soft keyboard opening does not resize the
+	// surface, and a bar auto-hiding does not either.
+	MsgInsets uint8 = 0x06
 
 	// MsgReady tells the host the shared buffer is mapped at the announced
 	// size, so the host may map it in turn. Every MsgFrame that follows
@@ -113,6 +118,54 @@ type Touch struct {
 	// ID is the pointer index, so a later multi-touch host can be told apart
 	// from this one without a protocol break. Single-touch hosts send 0.
 	ID int
+}
+
+// Insets is the margin of the surface the system draws over, in pixels.
+//
+// An Android window is edge-to-edge from API 35: the surface really is the
+// whole screen, and the status bar, the navigation bar, a display cutout and
+// the soft keyboard are painted ON TOP of it rather than shrinking it. So a
+// widget tree laid out to the full surface is correct in size and wrong in
+// practice — its first and last rows are behind the bars. These are the four
+// edges to keep clear.
+type Insets struct{ Left, Top, Right, Bottom int }
+
+// Empty reports whether nothing is covering the surface.
+func (i Insets) Empty() bool { return i == Insets{} }
+
+// Apply returns the part of a w×h surface that nothing is drawn over. It never
+// returns a negative extent: insets wider than the surface (a phone folded to
+// a sliver, a bad host) collapse the area to zero rather than inverting it.
+func (i Insets) Apply(w, h int) Rect {
+	r := Rect{X: i.Left, Y: i.Top, W: w - i.Left - i.Right, H: h - i.Top - i.Bottom}
+	if r.W < 0 {
+		r.W = 0
+	}
+	if r.H < 0 {
+		r.H = 0
+	}
+	return r
+}
+
+// EncodeInsets builds a MsgInsets body.
+func EncodeInsets(i Insets) []byte {
+	b := appendInt32(make([]byte, 0, 16), i.Left)
+	b = appendInt32(b, i.Top)
+	b = appendInt32(b, i.Right)
+	return appendInt32(b, i.Bottom)
+}
+
+// DecodeInsets parses a MsgInsets body.
+func DecodeInsets(b []byte) (Insets, error) {
+	if len(b) < 16 {
+		return Insets{}, ErrShortPayload
+	}
+	return Insets{
+		Left:   int32At(b, 0),
+		Top:    int32At(b, 4),
+		Right:  int32At(b, 8),
+		Bottom: int32At(b, 12),
+	}, nil
 }
 
 // Key is one key event.
