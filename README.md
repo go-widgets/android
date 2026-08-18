@@ -213,9 +213,17 @@ Android 15 / arm64:
 - the surface geometry and display density cross the socket — the demo reports
   `surface: 1080x2400 px, density 263`, the panel's true 2.625×;
 - the accessibility tree is real: `adb shell uiautomator dump`, which reads
-  through the same framework a screen reader does, sees five virtual nodes —
-  three `android.widget.TextView`, one `android.widget.Button` for "Click me",
-  and the counter — each with its text and screen bounds;
+  through the same framework a screen reader does, sees a virtual node per
+  element — `android.widget.TextView` for each label, `android.widget.Button`
+  for each button — each with its text and screen bounds;
+- **the touch-density floor works end to end.** The demo's last row holds a
+  deliberately tiny 20x20 button, because nothing visual can show this axis:
+  `toolkit.TouchTarget` clamps a control's HIT rectangle up to the density
+  minimum and centres it over UNCHANGED pixels. With the button at
+  `[40,2085][60,2105]` and its hit rect at `[28,2073][72,2117]`, a tap at
+  `(10,2095)` — outside both — does nothing, and a tap at `(30,2095)` — outside
+  the pixels, inside the hit rect — activates it. That is a fingertip landing
+  beside a 20-pixel target and still hitting it;
 - the system bars do not hide anything: with the device reporting
   `statusBars top=128` and `navigationBars bottom=126`, the tree's first text
   row moves from y=234 to y=337 and its last from y=2160 to y=2063 — the +103

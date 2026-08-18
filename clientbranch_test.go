@@ -632,3 +632,79 @@ func TestClientPrimaryFollowsTheFirstContactDown(t *testing.T) {
 		t.Fatalf("after all lift, a new contact: held=%v primary=%v, want false/true", held, primary)
 	}
 }
+
+func TestClientTranslatesTouchIntoTheRootSpace(t *testing.T) {
+	// The host reports a touch in SURFACE pixels, but a container treats an
+	// incoming event as parent-local and adds its own origin. A root laid out
+	// at the safe-area origin must therefore be handed events relative to that
+	// origin — otherwise every touch lands one inset too far, which is exactly
+	// what happened on device from the moment insets arrived: invisible while
+	// the demo's buttons were 426 pixels tall, obvious the moment one was 20.
+	const w, h = 200, 400
+	host, c := dialConfigured(t, w, h)
+	events := make(chan toolkit.Event, 16)
+	go func() { _ = c.Run(&recordingRoot{events: events}) }()
+	host.next() // seed frame
+
+	ins := Insets{Left: 10, Top: 30}
+	if err := WriteMessage(host.conn, MsgInsets, EncodeInsets(ins)); err != nil {
+		t.Fatalf("sending insets: %v", err)
+	}
+	host.next() // the frame the insets provoked
+
+	if err := WriteMessage(host.conn, MsgTouch, EncodeTouch(Touch{
+		Action: TouchDown, X: 50, Y: 90,
+	})); err != nil {
+		t.Fatalf("sending a touch: %v", err)
+	}
+	// Both the touch event and its compatibility mouse event are translated.
+	for i, want := range []toolkit.Event{
+		{Kind: toolkit.EventTouchStart, X: 40, Y: 60, Code: "0"},
+		{Kind: toolkit.EventClick, X: 40, Y: 60},
+	} {
+		select {
+		case got := <-events:
+			if got.Kind != want.Kind || got.X != want.X || got.Y != want.Y {
+				t.Fatalf("event %d = %v (%d,%d), want %v (%d,%d)",
+					i, got.Kind, got.X, got.Y, want.Kind, want.X, want.Y)
+			}
+		case <-time.After(testDeadline):
+			t.Fatalf("event %d never arrived", i)
+		}
+	}
+
+	// A full-bleed root is laid out at the surface origin, so nothing shifts.
+	c.SetFullBleed(true)
+	host.next() // the frame SetFullBleed provoked
+	if err := WriteMessage(host.conn, MsgTouch, EncodeTouch(Touch{
+		Action: TouchMove, X: 50, Y: 90,
+	})); err != nil {
+		t.Fatalf("sending a touch: %v", err)
+	}
+	select {
+	case got := <-events:
+		if got.X != 50 || got.Y != 90 {
+			t.Fatalf("full-bleed touch at (%d,%d), want (50,90) untranslated", got.X, got.Y)
+		}
+	case <-time.After(testDeadline):
+		t.Fatal("the full-bleed touch never arrived")
+	}
+}
+
+func TestKeyEventsCarryNoPosition(t *testing.T) {
+	// A key event has no meaningful X/Y, so shifting its zeroes would be noise.
+	for _, k := range []toolkit.EventKind{toolkit.EventKeyDown, toolkit.EventKeyUp, toolkit.EventChar} {
+		if hasPosition(k) {
+			t.Errorf("%v should carry no position", k)
+		}
+	}
+	for _, k := range []toolkit.EventKind{
+		toolkit.EventClick, toolkit.EventMouseUp, toolkit.EventMouseMove,
+		toolkit.EventMouseDrag, toolkit.EventScroll,
+		toolkit.EventTouchStart, toolkit.EventTouchMove, toolkit.EventTouchEnd,
+	} {
+		if !hasPosition(k) {
+			t.Errorf("%v should carry a position", k)
+		}
+	}
+}

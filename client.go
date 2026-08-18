@@ -296,17 +296,54 @@ func (c *Client) pointerState(t Touch) (held, primary bool) {
 // deliver hands mapped events to the widget tree and repaints. A paused
 // Activity has no surface to paint into, so its events still reach the tree —
 // state stays live across a pause — but no frame is posted.
+//
+// The coordinates are translated into the ROOT's own space first. The host
+// reports a touch in surface pixels, but a toolkit container treats an incoming
+// event as parent-local and adds its own origin to reach absolute coordinates —
+// so a root laid out at the safe-area origin must be handed events relative to
+// that origin, or every touch lands one inset too far.
+//
+// That was live from the moment insets arrived and invisible until something
+// small was tapped: the demo's buttons are 426 pixels tall, so a 128-pixel error
+// still landed inside the intended widget. A 20-pixel button is what showed it.
 func (c *Client) deliver(evs []toolkit.Event) {
 	c.mu.Lock()
 	root := c.root
+	origin := c.layoutOriginLocked()
 	c.mu.Unlock()
 	if root == nil {
 		return
 	}
 	for _, ev := range evs {
+		if hasPosition(ev.Kind) {
+			ev.X -= origin.X
+			ev.Y -= origin.Y
+		}
 		root.OnEvent(ev)
 	}
 	c.frame()
+}
+
+// layoutOriginLocked is where the root is laid out: the safe-area origin, or
+// (0,0) for a full-bleed root. The caller holds c.mu.
+func (c *Client) layoutOriginLocked() Rect {
+	if c.fullBled {
+		return Rect{}
+	}
+	a := c.insets.Apply(c.w, c.h)
+	return Rect{X: a.X, Y: a.Y}
+}
+
+// hasPosition reports whether an event kind carries a meaningful X/Y. A key
+// event does not, and shifting its zero coordinates would be noise.
+func hasPosition(k toolkit.EventKind) bool {
+	switch k {
+	case toolkit.EventClick, toolkit.EventMouseUp, toolkit.EventMouseMove,
+		toolkit.EventMouseDrag, toolkit.EventScroll,
+		toolkit.EventTouchStart, toolkit.EventTouchMove, toolkit.EventTouchEnd:
+		return true
+	}
+	return false
 }
 
 // reconfigure adopts a new surface geometry: it maps (or remaps) the host's
