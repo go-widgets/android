@@ -14,6 +14,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.util.DisplayMetrics;
 import android.util.Log;
+import android.text.InputType;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.SurfaceHolder;
@@ -22,6 +23,10 @@ import android.view.WindowInsets;
 import android.view.View;
 import android.view.WindowManager;
 import android.view.accessibility.AccessibilityNodeProvider;
+import android.view.inputmethod.BaseInputConnection;
+import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputConnection;
+import android.view.inputmethod.InputMethodManager;
 
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
@@ -32,6 +37,7 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -71,11 +77,14 @@ public final class GwHostActivity extends Activity implements SurfaceHolder.Call
     private static final int MSG_INSETS = 0x06;
     private static final int MSG_A11Y_REQUEST = 0x07;
     private static final int MSG_A11Y_ACTION = 0x08;
+    private static final int MSG_TEXT = 0x09;
+    private static final int MSG_TEXT_DELETE = 0x0a;
     private static final int MSG_READY = 0x81;
     private static final int MSG_FRAME = 0x82;
     private static final int MSG_TITLE = 0x83;
     private static final int MSG_BYE = 0x84;
     private static final int MSG_A11Y_TREE = 0x85;
+    private static final int MSG_KEYBOARD = 0x86;
 
     private static final int TOUCH_DOWN = 0, TOUCH_UP = 1, TOUCH_MOVE = 2;
     private static final int KEY_DOWN = 0, KEY_UP = 1;
@@ -104,7 +113,19 @@ public final class GwHostActivity extends Activity implements SurfaceHolder.Call
     protected void onCreate(Bundle state) {
         super.onCreate(state);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        view = new SurfaceView(this);
+        view = new SurfaceView(this) {
+            // onCreateInputConnection belongs to the VIEW, not the Activity: the
+            // input method attaches to whatever holds focus.
+            @Override
+            public InputConnection onCreateInputConnection(EditorInfo out) {
+                return newInputConnection(out);
+            }
+
+            @Override
+            public boolean onCheckIsTextEditor() {
+                return true;
+            }
+        };
         view.getHolder().addCallback(this);
         setContentView(view);
 
@@ -129,6 +150,9 @@ public final class GwHostActivity extends Activity implements SurfaceHolder.Call
             }
         });
         view.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
+        // A view must be focusable in touch mode to hold an input connection.
+        view.setFocusable(true);
+        view.setFocusableInTouchMode(true);
 
         DisplayMetrics dm = getResources().getDisplayMetrics();
         density = Math.round(dm.density * 100f);
@@ -219,6 +243,9 @@ public final class GwHostActivity extends Activity implements SurfaceHolder.Call
                 case MSG_TITLE:
                     final String title = new String(body, "UTF-8");
                     runOnUiThread(() -> setTitle(title));
+                    break;
+                case MSG_KEYBOARD:
+                    setSoftKeyboard(body.length > 0 && body[0] != 0);
                     break;
                 case MSG_A11Y_TREE:
                     a11y.setElements(parseA11yTree(body));
@@ -502,6 +529,80 @@ public final class GwHostActivity extends Activity implements SurfaceHolder.Call
             default:
                 return true;
         }
+    }
+
+    /**
+     * Gives the surface an input connection, which is how a soft keyboard talks
+     * to an application at all.
+     *
+     * <p>A soft keyboard does not send keystrokes. It commits finished text
+     * through an InputConnection — sometimes several characters at once, for a
+     * word completion, an emoji or a paste — and spells backspace as "delete n
+     * characters before the cursor". Both are forwarded as their own messages;
+     * a hardware key still arrives through onKeyDown as before.
+     */
+    /** Builds the connection the SurfaceView hands the input method. */
+    private InputConnection newInputConnection(EditorInfo out) {
+        out.inputType = InputType.TYPE_CLASS_TEXT;
+        out.imeOptions = EditorInfo.IME_ACTION_DONE | EditorInfo.IME_FLAG_NO_EXTRACT_UI;
+        // fullEditor=false: this view keeps no editable buffer of its own, the
+        // application owns the text. The connection is a pipe, not a model.
+        return new BaseInputConnection(view, false) {
+            @Override
+            public boolean commitText(CharSequence text, int newCursorPosition) {
+                if (text != null && text.length() > 0) {
+                    send(MSG_TEXT, text.toString().getBytes(StandardCharsets.UTF_8));
+                }
+                return true;
+            }
+
+            @Override
+            public boolean setComposingText(CharSequence text, int newCursorPosition) {
+                // Composition is not modelled: the application is told only
+                // about committed text, so a half-typed word does not reach the
+                // widget tree and then have to be taken back.
+                return true;
+            }
+
+            @Override
+            public boolean deleteSurroundingText(int beforeLength, int afterLength) {
+                if (beforeLength > 0) {
+                    byte[] body = new byte[4];
+                    putInt(body, 0, beforeLength);
+                    send(MSG_TEXT_DELETE, body);
+                }
+                return true;
+            }
+
+            @Override
+            public boolean sendKeyEvent(KeyEvent event) {
+                // Some keyboards send the delete key rather than asking for a
+                // deletion; route it through the ordinary key path.
+                if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                    sendKey(KEY_DOWN, event.getKeyCode(), event);
+                } else if (event.getAction() == KeyEvent.ACTION_UP) {
+                    sendKey(KEY_UP, event.getKeyCode(), event);
+                }
+                return true;
+            }
+        };
+    }
+
+    /** Shows or hides the soft keyboard, on the UI thread as the manager requires. */
+    private void setSoftKeyboard(boolean show) {
+        runOnUiThread(() -> {
+            InputMethodManager imm =
+                    (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+            if (imm == null) {
+                return;
+            }
+            if (show) {
+                view.requestFocus();
+                imm.showSoftInput(view, InputMethodManager.SHOW_IMPLICIT);
+                return;
+            }
+            imm.hideSoftInputFromWindow(view.getWindowToken(), 0);
+        });
     }
 
     /** Sends one contact of a MotionEvent, named by its POINTER INDEX. */

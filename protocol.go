@@ -54,6 +54,13 @@ const (
 	MsgA11yRequest uint8 = 0x07
 	// MsgA11yAction carries the index of the element a screen reader activated.
 	MsgA11yAction uint8 = 0x08
+	// MsgText carries text an input method committed, as UTF-8. A soft keyboard
+	// does not send keystrokes: it commits finished text, sometimes several
+	// characters at once (a word completion, an emoji, a pasted clipboard).
+	MsgText uint8 = 0x09
+	// MsgTextDelete asks to delete a number of characters before the cursor,
+	// which is how an input method spells backspace.
+	MsgTextDelete uint8 = 0x0a
 	// MsgInsets carries the area of the surface the system is drawing over.
 	// It is its own message rather than a Config field because insets change
 	// on their own schedule: the soft keyboard opening does not resize the
@@ -72,6 +79,9 @@ const (
 	MsgBye uint8 = 0x84
 	// MsgA11yTree answers MsgA11yRequest with the accessibility elements.
 	MsgA11yTree uint8 = 0x85
+	// MsgKeyboard asks the host to show or hide the soft keyboard. Only the host
+	// can: the keyboard is a window, and the application owns no windows.
+	MsgKeyboard uint8 = 0x86
 )
 
 // Touch actions, matching the three MotionEvent actions the host forwards.
@@ -464,3 +474,48 @@ func int32At(b []byte, off int) int { return int(int32(binary.BigEndian.Uint32(b
 // report it and exit cleanly, exactly as go-widgets/window does off its
 // supported back-ends.
 var ErrUnsupported = errors.New("android: no Android host on this platform")
+
+// MapText turns text an input method committed into toolkit events.
+//
+// A soft keyboard is not a keyboard: it does not send keystrokes, it commits
+// finished text, sometimes several characters at once — a word completion, an
+// emoji, a pasted clipboard. Each rune therefore becomes the pair a printable
+// key produces, EventKeyDown then EventChar, which is exactly what the X11 and
+// wasmbox back-ends emit for a typed character. Every text widget in the
+// toolkit already consumes that pair, so an input method needs no new path
+// through the widget tree.
+func MapText(s string) []toolkit.Event {
+	evs := make([]toolkit.Event, 0, 2*len([]rune(s)))
+	for _, r := range s {
+		code := string(r)
+		evs = append(evs,
+			toolkit.Event{Kind: toolkit.EventKeyDown, Code: code},
+			toolkit.Event{Kind: toolkit.EventChar, Code: code},
+		)
+	}
+	return evs
+}
+
+// MapTextDelete turns an input method's "delete n characters before the cursor"
+// into n backspaces, which is how the toolkit's text widgets spell it.
+func MapTextDelete(n int) []toolkit.Event {
+	if n <= 0 {
+		return nil
+	}
+	evs := make([]toolkit.Event, 0, n)
+	for i := 0; i < n; i++ {
+		evs = append(evs, toolkit.Event{Kind: toolkit.EventKeyDown, Code: "Backspace"})
+	}
+	return evs
+}
+
+// DecodeTextDelete parses a MsgTextDelete body.
+func DecodeTextDelete(b []byte) (int, error) {
+	if len(b) < 4 {
+		return 0, ErrShortPayload
+	}
+	return int32At(b, 0), nil
+}
+
+// EncodeTextDelete builds a MsgTextDelete body.
+func EncodeTextDelete(n int) []byte { return appendInt32(nil, n) }

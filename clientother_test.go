@@ -35,4 +35,5 @@ func TestUnsupportedSurface(t *testing.T) {
 	}
 	c.Repaint()
 	c.SetTitle("ignored")
+	c.SetSoftKeyboard(true)
 }

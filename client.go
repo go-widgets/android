@@ -241,6 +241,15 @@ func (c *Client) dispatch(typ uint8, body []byte) bool {
 		if changed {
 			c.frame()
 		}
+	case MsgText:
+		c.deliver(MapText(string(body)))
+	case MsgTextDelete:
+		n, err := DecodeTextDelete(body)
+		if err != nil {
+			c.shutdown(err, false)
+			return false
+		}
+		c.deliver(MapTextDelete(n))
 	case MsgA11yRequest:
 		c.sendA11yTree()
 	case MsgA11yAction:
@@ -594,4 +603,19 @@ func (c *Client) shutdown(err error, sendBye bool) {
 		_ = c.conn.Close()
 		close(c.done)
 	})
+}
+
+// SetSoftKeyboard asks the host to show or hide the on-screen keyboard.
+//
+// Only the host can: the keyboard is a window, and an application that owns no
+// windows cannot raise one. Showing it also changes the insets — the keyboard
+// covers the bottom of the surface — so the tree is laid out above it without
+// this back-end doing anything special, because an IME inset is an inset like
+// any other (see [Client.Insets]).
+func (c *Client) SetSoftKeyboard(show bool) {
+	b := byte(0)
+	if show {
+		b = 1
+	}
+	_ = c.send(MsgKeyboard, []byte{b})
 }

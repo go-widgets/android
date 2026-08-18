@@ -708,3 +708,71 @@ func TestKeyEventsCarryNoPosition(t *testing.T) {
 		}
 	}
 }
+
+func TestClientCommittedTextReachesTheTree(t *testing.T) {
+	// A soft keyboard commits finished text, sometimes several characters at
+	// once. Each rune must reach the tree as the pair a printable key
+	// produces, so an ordinary text widget needs no Android-specific path.
+	host, c := dialConfigured(t, 200, 200)
+	events := make(chan toolkit.Event, 32)
+	go func() { _ = c.Run(&recordingRoot{events: events}) }()
+	host.next() // seed frame
+
+	if err := WriteMessage(host.conn, MsgText, []byte("héllo")); err != nil {
+		t.Fatalf("committing text: %v", err)
+	}
+	for _, want := range []string{"h", "h", "é", "é", "l", "l", "l", "l", "o", "o"} {
+		select {
+		case got := <-events:
+			if got.Code != want {
+				t.Fatalf("event code %q, want %q", got.Code, want)
+			}
+			if got.Kind != toolkit.EventKeyDown && got.Kind != toolkit.EventChar {
+				t.Fatalf("event kind %v, want a key-down or a char", got.Kind)
+			}
+		case <-time.After(testDeadline):
+			t.Fatalf("the commit stopped before %q", want)
+		}
+	}
+
+	// Backspace, as an input method spells it.
+	if err := WriteMessage(host.conn, MsgTextDelete, EncodeTextDelete(2)); err != nil {
+		t.Fatalf("deleting: %v", err)
+	}
+	for i := 0; i < 2; i++ {
+		select {
+		case got := <-events:
+			if got.Kind != toolkit.EventKeyDown || got.Code != "Backspace" {
+				t.Fatalf("delete %d = %v %q, want a Backspace key-down", i, got.Kind, got.Code)
+			}
+		case <-time.After(testDeadline):
+			t.Fatalf("delete %d never arrived", i)
+		}
+	}
+}
+
+func TestClientAsksTheHostForTheKeyboard(t *testing.T) {
+	host, c := dialConfigured(t, 100, 100)
+	go func() { _ = c.Run(toolkit.NewVBox()) }()
+	host.next() // seed frame
+
+	c.SetSoftKeyboard(true)
+	if typ, body := host.next(); typ != MsgKeyboard || len(body) != 1 || body[0] != 1 {
+		t.Fatalf("show = %#x %v, want MsgKeyboard [1]", typ, body)
+	}
+	c.SetSoftKeyboard(false)
+	if typ, body := host.next(); typ != MsgKeyboard || len(body) != 1 || body[0] != 0 {
+		t.Fatalf("hide = %#x %v, want MsgKeyboard [0]", typ, body)
+	}
+}
+
+func TestClientRejectsAMalformedDelete(t *testing.T) {
+	host, cl := dialConfigured(t, 100, 100)
+	if err := WriteMessage(host.conn, MsgTextDelete, []byte{1}); err != nil {
+		t.Fatalf("sending: %v", err)
+	}
+	waitDone(t, cl)
+	if cl.runErr == nil {
+		t.Fatal("a malformed MsgTextDelete should end the session with an error")
+	}
+}

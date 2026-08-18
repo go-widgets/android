@@ -427,3 +427,29 @@ func TestMapTouchDrivesTheMultiTouchRecognizer(t *testing.T) {
 		t.Fatalf("closing the fingers should pinch in: scale=%v, want < 1", lastScale)
 	}
 }
+
+func TestMapTextAndDelete(t *testing.T) {
+	// Empty text commits nothing, and a non-positive delete deletes nothing:
+	// an input method may report either, and neither should reach the tree.
+	if got := MapText(""); len(got) != 0 {
+		t.Fatalf("MapText(\"\") = %+v, want nothing", got)
+	}
+	for _, n := range []int{0, -3} {
+		if got := MapTextDelete(n); got != nil {
+			t.Fatalf("MapTextDelete(%d) = %+v, want nil", n, got)
+		}
+	}
+	// A multi-byte rune is ONE character, not its bytes.
+	if got := MapText("é"); !slices.Equal(got, []toolkit.Event{
+		{Kind: toolkit.EventKeyDown, Code: "é"},
+		{Kind: toolkit.EventChar, Code: "é"},
+	}) {
+		t.Fatalf("MapText(\"é\") = %+v", got)
+	}
+	if got, err := DecodeTextDelete(EncodeTextDelete(3)); err != nil || got != 3 {
+		t.Fatalf("round trip = %d err=%v, want 3", got, err)
+	}
+	if _, err := DecodeTextDelete([]byte{1}); !errors.Is(err, ErrShortPayload) {
+		t.Fatalf("short err = %v, want ErrShortPayload", err)
+	}
+}

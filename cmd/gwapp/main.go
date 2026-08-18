@@ -71,6 +71,7 @@ func scene(c *android.Client) toolkit.Widget {
 	box.Append(btn)
 	box.Append(label)
 	box.Append(newTouchFloorRow())
+	box.Append(newIMERow(c))
 	return box
 }
 
@@ -112,4 +113,43 @@ func newTouchFloorRow() *touchFloorRow {
 	c.AddWidget(tiny)
 	c.AddWidget(report)
 	return &touchFloorRow{Container: c, tiny: tiny, report: report}
+}
+
+// imeRow is the soft-keyboard row: a text entry and the button that raises the
+// keyboard for it.
+//
+// It exists because only the host can show a keyboard — the keyboard is a
+// window and the application owns none — so an application asks, through
+// [android.Client.SetSoftKeyboard]. What comes back is not keystrokes but
+// committed text, which this back-end turns into the EventKeyDown+EventChar
+// pair every toolkit text widget already understands: the Entry below needs no
+// Android-specific code at all.
+type imeRow struct {
+	*toolkit.Container
+	entry *toolkit.Entry
+	show  *toolkit.Button
+}
+
+// SetBounds places the row, then its children inside it.
+func (r *imeRow) SetBounds(b toolkit.Rect) {
+	r.Container.SetBounds(b)
+	y := b.Y + (b.H-70)/2
+	r.entry.SetBounds(toolkit.Rect{X: b.X + 40, Y: y, W: 600, H: 70})
+	r.show.SetBounds(toolkit.Rect{X: b.X + 680, Y: y, W: 340, H: 70})
+}
+
+// newIMERow builds the row. c may be nil off Android, where there is no host to
+// ask and the button simply does nothing.
+func newIMERow(c *android.Client) *imeRow {
+	entry := toolkit.NewEntry("")
+	show := toolkit.NewButton("keyboard", func() {
+		entry.SetFocused(true)
+		if c != nil {
+			c.SetSoftKeyboard(true)
+		}
+	})
+	box := toolkit.NewContainer(nil)
+	box.AddWidget(entry)
+	box.AddWidget(show)
+	return &imeRow{Container: box, entry: entry, show: show}
 }
