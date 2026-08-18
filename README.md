@@ -116,6 +116,18 @@ attached never builds one — which is also what keeps this from repeating
 go-widgets/window's macOS mistake of rebuilding the whole tree inside the paint
 loop and freezing the machine.
 
+Measured, again with process CPU over ten-second windows: **0 ticks** with nobody
+reading, and **0 ticks** across ten full reads — because one read is far below
+what a 100 Hz counter can see. `BenchmarkA11yElements`, run on the device, says
+what it actually costs:
+
+```
+BenchmarkA11yElements-4   237154   10052 ns/op   20944 B/op   9 allocs/op
+```
+
+Ten microseconds for a 41-widget tree. That is the number behind "too cheap to
+measure", and it is why pulling on demand costs nothing worth avoiding.
+
 An activation comes back as an ordinary click at the element's centre, so an
 accessibility action goes through the very code a touch does, with no second
 path to drift from the first — the rule the AT-SPI bridge already follows.
