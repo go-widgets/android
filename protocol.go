@@ -61,6 +61,11 @@ const (
 	// MsgTextDelete asks to delete a number of characters before the cursor,
 	// which is how an input method spells backspace.
 	MsgTextDelete uint8 = 0x0a
+	// MsgScroll carries a scroll notch from a wheel or a trackpad, in detents.
+	// A finger on the glass is not a scroll: it is a drag, and arrives as
+	// MsgTouch. This is the pointing device a Chromebook, a DeX desktop or a
+	// tablet with a mouse has.
+	MsgScroll uint8 = 0x0b
 	// MsgInsets carries the area of the surface the system is drawing over.
 	// It is its own message rather than a Config field because insets change
 	// on their own schedule: the soft keyboard opening does not resize the
@@ -519,3 +524,48 @@ func DecodeTextDelete(b []byte) (int, error) {
 
 // EncodeTextDelete builds a MsgTextDelete body.
 func EncodeTextDelete(n int) []byte { return appendInt32(nil, n) }
+
+// Scroll is one scroll notch from a wheel or a trackpad, in detents: positive
+// Y scrolls toward the end of the content, positive X toward its right.
+type Scroll struct{ X, Y, DetentX, DetentY int }
+
+// EncodeScroll builds a MsgScroll body.
+func EncodeScroll(s Scroll) []byte {
+	b := appendInt32(nil, s.X)
+	b = appendInt32(b, s.Y)
+	b = appendInt32(b, s.DetentX)
+	return appendInt32(b, s.DetentY)
+}
+
+// DecodeScroll parses a MsgScroll body.
+func DecodeScroll(b []byte) (Scroll, error) {
+	if len(b) < 16 {
+		return Scroll{}, ErrShortPayload
+	}
+	return Scroll{
+		X: int32At(b, 0), Y: int32At(b, 4),
+		DetentX: int32At(b, 8), DetentY: int32At(b, 12),
+	}, nil
+}
+
+// MapScroll maps a scroll notch to a toolkit event.
+//
+// Android reports a wheel detent as +1 UP and -1 DOWN, the opposite of the
+// toolkit's convention, where a positive Delta scrolls toward the end of the
+// content. So the vertical axis is negated and the horizontal one is not:
+// Android's AXIS_HSCROLL is already positive to the right.
+//
+// A notch with no movement on either axis produces nothing rather than a
+// Delta-0 event, so a device that reports an idle scroll wakes no widget.
+func MapScroll(s Scroll) []toolkit.Event {
+	if s.DetentX == 0 && s.DetentY == 0 {
+		return nil
+	}
+	return []toolkit.Event{{
+		Kind:   toolkit.EventScroll,
+		X:      s.X,
+		Y:      s.Y,
+		Delta:  -s.DetentY,
+		DeltaX: s.DetentX,
+	}}
+}

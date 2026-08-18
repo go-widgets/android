@@ -453,3 +453,28 @@ func TestMapTextAndDelete(t *testing.T) {
 		t.Fatalf("short err = %v, want ErrShortPayload", err)
 	}
 }
+
+func TestScrollRoundTripAndMapping(t *testing.T) {
+	want := Scroll{X: 10, Y: 20, DetentX: -1, DetentY: 3}
+	got, err := DecodeScroll(EncodeScroll(want))
+	if err != nil || got != want {
+		t.Fatalf("round trip = %+v err=%v, want %+v", got, err, want)
+	}
+	if _, err := DecodeScroll(make([]byte, 15)); !errors.Is(err, ErrShortPayload) {
+		t.Fatalf("short err = %v, want ErrShortPayload", err)
+	}
+
+	// Android reports a wheel detent as +1 UP; the toolkit's Delta is positive
+	// TOWARD THE END of the content. So the vertical axis is negated and the
+	// horizontal one is not — AXIS_HSCROLL is already positive to the right.
+	evs := MapScroll(Scroll{X: 5, Y: 6, DetentX: 2, DetentY: 1})
+	if !slices.Equal(evs, []toolkit.Event{
+		{Kind: toolkit.EventScroll, X: 5, Y: 6, Delta: -1, DeltaX: 2},
+	}) {
+		t.Fatalf("MapScroll = %+v", evs)
+	}
+	// An idle notch wakes nothing.
+	if got := MapScroll(Scroll{X: 1, Y: 2}); got != nil {
+		t.Fatalf("an idle notch mapped to %+v, want nothing", got)
+	}
+}

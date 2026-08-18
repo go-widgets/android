@@ -79,6 +79,7 @@ public final class GwHostActivity extends Activity implements SurfaceHolder.Call
     private static final int MSG_A11Y_ACTION = 0x08;
     private static final int MSG_TEXT = 0x09;
     private static final int MSG_TEXT_DELETE = 0x0a;
+    private static final int MSG_SCROLL = 0x0b;
     private static final int MSG_READY = 0x81;
     private static final int MSG_FRAME = 0x82;
     private static final int MSG_TITLE = 0x83;
@@ -529,6 +530,29 @@ public final class GwHostActivity extends Activity implements SurfaceHolder.Call
             default:
                 return true;
         }
+    }
+
+    /**
+     * Forwards a scroll notch from a pointing device.
+     *
+     * <p>A finger on the glass is never a scroll — it is a drag, and arrives
+     * through onTouchEvent. This is the wheel or trackpad a Chromebook, a DeX
+     * desktop or a tablet with a mouse has, and it reaches a view through
+     * onGenericMotionEvent rather than onTouchEvent. Without it those devices
+     * could not scroll a go-widgets surface at all.
+     */
+    @Override
+    public boolean onGenericMotionEvent(MotionEvent e) {
+        if (e.getActionMasked() != MotionEvent.ACTION_SCROLL) {
+            return super.onGenericMotionEvent(e);
+        }
+        byte[] body = new byte[16];
+        putInt(body, 0, Math.round(e.getX()));
+        putInt(body, 4, Math.round(e.getY()));
+        putInt(body, 8, Math.round(e.getAxisValue(MotionEvent.AXIS_HSCROLL)));
+        putInt(body, 12, Math.round(e.getAxisValue(MotionEvent.AXIS_VSCROLL)));
+        send(MSG_SCROLL, body);
+        return true;
     }
 
     /**
