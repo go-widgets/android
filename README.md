@@ -355,6 +355,20 @@ very thing an Android application binary must not have.
 
 Android 15 / arm64 unless stated otherwise:
 
+- **a packaged application reaches the network**, which resolution alone does
+  not prove. A probe built against this package, packaged with `APP_BIN` and
+  given `INTERNET` + `ACCESS_NETWORK_STATE`, logs the whole chain:
+
+  ```
+  gw-host : dns servers: fec0::3,10.0.2.3
+  netprobe: HOME="/data/user/0/org.gowidgets.netprobe/files"
+  netprobe: lookup example.com -> [172.66.147.243 …] err=<nil>
+  netprobe: GET ok status=200 OK first64="<!doctype html><html lang=\"en\">…"
+  ```
+
+  The host reads both an IPv6 and an IPv4 server and passes both; the
+  application resolves and completes a real HTTPS request. Without the resolver
+  the same binary cannot look up a single name;
 - **a real application runs**, not only the demo: `go-news-reader/reader`,
   packaged with `APP_BIN`, draws its own interface on the device — its
   accessibility tree reports `News`, `Toggle sidebar`, `All Sources`,
