@@ -164,14 +164,33 @@ func TestMapTouch(t *testing.T) {
 		held bool
 		want []toolkit.Event
 	}{
-		{"press is a click", Touch{Action: TouchDown, X: 3, Y: 4}, false,
-			[]toolkit.Event{{Kind: toolkit.EventClick, X: 3, Y: 4}}},
-		{"release", Touch{Action: TouchUp, X: 3, Y: 4}, true,
-			[]toolkit.Event{{Kind: toolkit.EventMouseUp, X: 3, Y: 4}}},
+		// Each sample yields the touch event a gesture-aware widget needs,
+		// then the mouse event every other widget listens for.
+		{"press", Touch{Action: TouchDown, X: 3, Y: 4, ID: 1}, false,
+			[]toolkit.Event{
+				{Kind: toolkit.EventTouchStart, X: 3, Y: 4, Code: "1"},
+				{Kind: toolkit.EventClick, X: 3, Y: 4},
+			}},
+		{"release", Touch{Action: TouchUp, X: 3, Y: 4, ID: 1}, true,
+			[]toolkit.Event{
+				{Kind: toolkit.EventTouchEnd, X: 3, Y: 4, Code: "1"},
+				{Kind: toolkit.EventMouseUp, X: 3, Y: 4},
+			}},
 		{"move with the finger down is a drag", Touch{Action: TouchMove, X: 5, Y: 6}, true,
-			[]toolkit.Event{{Kind: toolkit.EventMouseDrag, X: 5, Y: 6}}},
+			[]toolkit.Event{
+				{Kind: toolkit.EventTouchMove, X: 5, Y: 6, Code: "0"},
+				{Kind: toolkit.EventMouseDrag, X: 5, Y: 6},
+			}},
 		{"move with no finger down", Touch{Action: TouchMove, X: 5, Y: 6}, false,
-			[]toolkit.Event{{Kind: toolkit.EventMouseMove, X: 5, Y: 6}}},
+			[]toolkit.Event{
+				{Kind: toolkit.EventTouchMove, X: 5, Y: 6, Code: "0"},
+				{Kind: toolkit.EventMouseMove, X: 5, Y: 6},
+			}},
+		{"a second finger keeps its own id", Touch{Action: TouchDown, X: 9, Y: 9, ID: 2}, false,
+			[]toolkit.Event{
+				{Kind: toolkit.EventTouchStart, X: 9, Y: 9, Code: "2"},
+				{Kind: toolkit.EventClick, X: 9, Y: 9},
+			}},
 		{"an action the host does not forward", Touch{Action: 99}, false, nil},
 	}
 	for _, c := range cases {
@@ -182,6 +201,65 @@ func TestMapTouch(t *testing.T) {
 		})
 	}
 }
+
+// TestMapTouchDrivesTheGestureRecognizer feeds a real toolkit.GestureRecognizer
+// the events this back-end produces. It is the proof that the touch half is not
+// decoration: tap, long press and swipe are toolkit machinery that only ever
+// fires on EventTouch*, and before this back-end emitted them, every one of
+// those gestures was dead on Android — the one platform they exist for.
+func TestMapTouchDrivesTheGestureRecognizer(t *testing.T) {
+	feed := func(g *toolkit.GestureRecognizer, samples ...Touch) {
+		for _, s := range samples {
+			for _, ev := range MapTouch(s, s.Action == TouchMove) {
+				g.Feed(ev)
+			}
+		}
+	}
+
+	t.Run("tap", func(t *testing.T) {
+		g := toolkit.NewGestureRecognizer()
+		var tapped bool
+		g.OnTap = func(x, y int) { tapped = true }
+		feed(g,
+			Touch{Action: TouchDown, X: 50, Y: 50, ID: 1},
+			Touch{Action: TouchUp, X: 51, Y: 50, ID: 1},
+		)
+		if !tapped {
+			t.Fatal("a press and release in place should be a tap")
+		}
+	})
+
+	t.Run("swipe", func(t *testing.T) {
+		g := toolkit.NewGestureRecognizer()
+		got := SwipeDirNone
+		g.OnSwipe = func(d toolkit.SwipeDir) { got = int(d) }
+		feed(g,
+			Touch{Action: TouchDown, X: 200, Y: 50, ID: 1},
+			Touch{Action: TouchMove, X: 100, Y: 50, ID: 1},
+			Touch{Action: TouchUp, X: 100, Y: 50, ID: 1},
+		)
+		if got != int(toolkit.SwipeLeft) {
+			t.Fatalf("swipe = %v, want SwipeLeft", got)
+		}
+	})
+
+	t.Run("long press", func(t *testing.T) {
+		g := toolkit.NewGestureRecognizer()
+		var held bool
+		g.OnLongPress = func(x, y int) { held = true }
+		feed(g, Touch{Action: TouchDown, X: 50, Y: 50, ID: 1})
+		for i := 0; i < g.LongPressTicks; i++ {
+			g.Tick()
+		}
+		if !held {
+			t.Fatal("a touch held past LongPressTicks should be a long press")
+		}
+	})
+}
+
+// SwipeDirNone is a sentinel outside the SwipeDir range, so a test can tell
+// "no swipe fired" from "SwipeLeft fired" (SwipeLeft being zero).
+const SwipeDirNone = -1
 
 func TestMapKey(t *testing.T) {
 	cases := []struct {

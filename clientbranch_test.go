@@ -96,7 +96,7 @@ func TestClientKeyReachesTree(t *testing.T) {
 
 func TestClientTouchDragSequence(t *testing.T) {
 	host, c := dialConfigured(t, 200, 100)
-	events := make(chan toolkit.Event, 8)
+	events := make(chan toolkit.Event, 16)
 	go func() { _ = c.Run(&recordingRoot{events: events}) }()
 	host.next() // seed frame
 
@@ -112,9 +112,13 @@ func TestClientTouchDragSequence(t *testing.T) {
 			t.Fatalf("sending a touch: %v", err)
 		}
 	}
+	// Every sample delivers its touch event and then its mouse event, so a
+	// gesture-aware widget and an ordinary one both see the same gesture.
 	want := []toolkit.EventKind{
-		toolkit.EventClick, toolkit.EventMouseDrag,
-		toolkit.EventMouseUp, toolkit.EventMouseMove,
+		toolkit.EventTouchStart, toolkit.EventClick,
+		toolkit.EventTouchMove, toolkit.EventMouseDrag,
+		toolkit.EventTouchEnd, toolkit.EventMouseUp,
+		toolkit.EventTouchMove, toolkit.EventMouseMove,
 	}
 	for i, w := range want {
 		select {
