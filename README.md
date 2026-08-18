@@ -283,6 +283,57 @@ application instead of the demo. Two things it does that are worth knowing:
   fresh key per build changes the signing certificate, and Android then refuses
   to update an installed app (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`).
 
+### Packaging an application from another module
+
+`APP=./cmd/myapp` builds a package of *this* repo. An application living in its
+own module is packaged from a binary it built itself, since a build script
+cannot reach across a module boundary:
+
+```sh
+GOOS=android GOARCH=arm64 CGO_ENABLED=0 go build -o /tmp/myapp ./cmd/myapp
+
+APP_BIN=/tmp/myapp \
+PACKAGE=org.example.myapp \
+LABEL="My App" \
+APK=myapp \
+ARGS="-window -sub reddit:golang" \
+PERMISSIONS="android.permission.INTERNET android.permission.ACCESS_NETWORK_STATE" \
+host/build.sh
+```
+
+| Variable | Effect |
+| --- | --- |
+| `APP_BIN` | package this pre-built binary instead of running `go build` |
+| `PACKAGE` | application id, so it coexists with the demo and with other packaged apps |
+| `LABEL` | launcher name |
+| `APK` | output file name |
+| `ARGS` | arguments handed to the application (manifest `meta-data`, split on whitespace) |
+| `PERMISSIONS` | `uses-permission` names; **empty by default**, so no app asks for more than it uses |
+
+The host owns the `Activity` and the surface and does not care which Go program
+it spawns, so any CGO-free go-widgets binary is a valid payload.
+
+### What the host hands the application
+
+Android gives a spawned process almost nothing a Unix program expects, and two
+of those gaps stop real applications dead. Both are the host's to fill, and it
+fills them:
+
+- **`HOME`** (and `XDG_CACHE_HOME`, `TMPDIR`) — an app process inherits no home
+  directory, so `os.UserConfigDir` and `os.UserHomeDir` both fail outright. The
+  first real application packaged this way died on exactly that, before drawing
+  a pixel. `HOME` is the app's `getFilesDir()`, which is persistent; the cache
+  variables point at `getCacheDir()`, which is what the system reclaims under
+  pressure — so caches land where Android expects to be able to delete them.
+- **`GW_ANDROID_DNS`** — Android has **no `/etc/resolv.conf`**, and its resolver
+  lives behind libc, which is behind cgo. A CGO-free binary therefore cannot
+  resolve a single name: Go finds no nameserver, falls back to localhost and
+  every lookup dies with a connection refused. The host reads the active
+  network's servers through `ConnectivityManager` and passes them here, and
+  `Dial` installs a `net.Resolver` that talks to them directly. Reading them
+  needs `ACCESS_NETWORK_STATE`, so an application that does not want the network
+  is never made to ask for it — it simply gets no resolver.
+
 ## Testing
 
 The transport is Linux, and Android *is* Linux: the abstract socket it dials
@@ -302,7 +353,17 @@ very thing an Android application binary must not have.
 
 ## Proven on device
 
-Android 15 / arm64:
+Android 15 / arm64 unless stated otherwise:
+
+- **a real application runs**, not only the demo: `go-news-reader/reader`,
+  packaged with `APP_BIN`, draws its own interface on the device — its
+  accessibility tree reports `News`, `Toggle sidebar`, `All Sources`,
+  `Settings`. Getting there is what found the two environment gaps above;
+- **the declared floor is measured, not asserted.** `minSdkVersion` claims 26,
+  so the suite is not evidence unless something actually runs there: on
+  **Android 8.0 / API 26 / arm64** the app launches, the Go process comes up,
+  the accessibility tree is complete (54 nodes, the same widgets as on 15) and
+  two taps on the button leave `clicks: 1` then `2`;
 
 - the app installs and launches; the whole window is the go-widgets tree;
 - a touch reaches the widget — three taps on the button leave `clicks: 3`, and

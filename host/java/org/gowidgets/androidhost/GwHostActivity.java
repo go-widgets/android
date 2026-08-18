@@ -5,9 +5,12 @@
 package org.gowidgets.androidhost;
 
 import android.app.Activity;
+import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Rect;
+import android.net.ConnectivityManager;
+import android.net.LinkProperties;
 import android.net.LocalServerSocket;
 import android.net.LocalSocket;
 import android.os.Build;
@@ -35,10 +38,13 @@ import java.io.FileDescriptor;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.RandomAccessFile;
+import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -67,6 +73,19 @@ public final class GwHostActivity extends Activity implements SurfaceHolder.Call
 
     /** Environment variable naming the abstract socket, matching androidhost.EnvSocket. */
     private static final String ENV_SOCKET = "GW_ANDROID_SOCKET";
+
+    /**
+     * Names the environment variable carrying the system's DNS servers, comma
+     * separated, to the application.
+     *
+     * <p>Android has no { /etc/resolv.conf}, and its resolver lives behind
+     * libc, which is behind cgo -- the one thing a CGO-free application does not
+     * have. So a pure-Go binary cannot resolve a name here at all: it falls back
+     * to localhost and gets a connection refused. The host can see the servers
+     * through ConnectivityManager, so it hands them over and the application
+     * installs a resolver that talks to them directly.
+     */
+    private static final String ENV_DNS = "GW_ANDROID_DNS";
 
     // Message types, matching androidhost/protocol.go.
     private static final int MSG_CONFIG = 0x01;
@@ -206,14 +225,96 @@ public final class GwHostActivity extends Activity implements SurfaceHolder.Call
         server = new LocalServerSocket(name);
 
         String exe = getApplicationInfo().nativeLibraryDir + "/libgwapp.so";
-        ProcessBuilder pb = new ProcessBuilder(exe);
+        List<String> argv = new ArrayList<>();
+        argv.add(exe);
+        argv.addAll(appArgs());
+        ProcessBuilder pb = new ProcessBuilder(argv);
         pb.environment().put(ENV_SOCKET, name);
+        // Give the application the Unix environment every Go program assumes and
+        // Android provides to nobody. An app process inherits no HOME, so
+        // os.UserConfigDir and os.UserHomeDir both fail outright -- the first
+        // real application packaged this way died on exactly that, before
+        // drawing a single pixel.
+        //
+        // The app's private storage is the honest answer: getFilesDir() is
+        // persistent and backed up, getCacheDir() is what the system reclaims
+        // under pressure. Mapping XDG_CACHE_HOME onto the latter puts caches
+        // where Android expects to be able to delete them, which a bare HOME
+        // would not.
+        String dns = dnsServers();
+        Log.i(TAG, "dns servers: " + (dns.isEmpty() ? "(none)" : dns));
+        if (!dns.isEmpty()) {
+            pb.environment().put(ENV_DNS, dns);
+        }
+        pb.environment().put("HOME", getFilesDir().getAbsolutePath());
+        pb.environment().put("XDG_CACHE_HOME", getCacheDir().getAbsolutePath());
         pb.environment().put("TMPDIR", getCacheDir().getAbsolutePath());
         pb.redirectErrorStream(true);
         app = pb.start();
         drainTo(TAG + "-app", app.getInputStream());
 
         new Thread(this::accept, "gw-host-accept").start();
+    }
+
+    /**
+     * Returns the arguments to hand the packaged application, from the
+     * { org.gowidgets.args} manifest meta-data.
+     *
+     * <p>The host packages applications from other modules, and a real program
+     * usually needs to be told what to do -- this repo's own demo is the
+     * exception, not the rule. The manifest is where Android expects such
+     * per-package configuration to live, so no host code changes per application.
+     *
+     * <p>Splitting on whitespace is deliberate and documented rather than a
+     * shortcut: an argument containing a space would need quoting rules the
+     * manifest has no way to express, and every flag a go-widgets application
+     * takes is a plain token.
+     */
+    private List<String> appArgs() {
+        try {
+            Bundle meta = getPackageManager()
+                    .getApplicationInfo(getPackageName(), PackageManager.GET_META_DATA)
+                    .metaData;
+            String raw = meta == null ? null : meta.getString("org.gowidgets.args");
+            if (raw == null || raw.trim().isEmpty()) {
+                return Collections.emptyList();
+            }
+            return Arrays.asList(raw.trim().split("\\s+"));
+        } catch (PackageManager.NameNotFoundException e) {
+            // Our own package always exists; treat the impossible as "no arguments".
+            return Collections.emptyList();
+        }
+    }
+
+    /**
+     * Returns the active network's DNS servers, comma separated, or an empty
+     * string when they cannot be read.
+     *
+     * <p>Reading them needs ACCESS_NETWORK_STATE, which an application declares
+     * only if it wants the network at all, so failure here is ordinary rather
+     * than exceptional: a GUI-only application should not be made to ask for a
+     * permission it has no use for. It simply gets no resolver.
+     */
+    private String dnsServers() {
+        try {
+            ConnectivityManager cm = getSystemService(ConnectivityManager.class);
+            android.net.Network net = cm == null ? null : cm.getActiveNetwork();
+            LinkProperties lp = net == null ? null : cm.getLinkProperties(net);
+            if (lp == null) {
+                return "";
+            }
+            StringBuilder sb = new StringBuilder();
+            for (InetAddress a : lp.getDnsServers()) {
+                if (sb.length() > 0) {
+                    sb.append(',');
+                }
+                sb.append(a.getHostAddress());
+            }
+            return sb.toString();
+        } catch (RuntimeException e) { // SecurityException included: it is one
+            Log.i(TAG, "no DNS servers available: " + e);
+            return "";
+        }
     }
 
     /** Accepts the application's connection and pumps its messages until it ends. */

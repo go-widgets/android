@@ -16,15 +16,40 @@
 
     <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="35" />
 
+    <!-- GW_PERMISSIONS -->
+    <!--
+      The line above is where host/build.sh substitutes $PERMISSIONS when it
+      packages an application. It is empty by default, and stays empty for this
+      repo's own demo, which needs none. A host manifest that pre-declared every
+      permission an application might want would make every packaged app ask for
+      more than it uses, so each application declares exactly what it needs and
+      nothing more. Anything that fetches over the network wants
+      PERMISSIONS=android.permission.INTERNET.
+    -->
+
     <application android:label="go-widgets"
                  android:extractNativeLibs="true"
                  android:hasCode="true">
+        <!--
+          Arguments handed to the packaged application. Empty for this repo's own
+          demo, which needs none; host/build.sh substitutes $ARGS here when it
+          packages an application from another module, since a real program
+          usually needs to be told what to do (go-news-reader/reader, say, opens
+          a window only when asked to).
+        -->
+        <meta-data android:name="org.gowidgets.args" android:value="" />
         <!--
           NoActionBar because the go-widgets tree IS the whole window: from
           Android 15 a targetSdk-35 window is edge-to-edge, so an action bar
           does not shrink the surface, it covers the top of it.
         -->
-        <activity android:name=".GwHostActivity"
+        <!--
+          Fully qualified, NOT ".GwHostActivity": a relative name resolves against
+          the manifest's package attribute, which host/build.sh rewrites when it
+          packages an application under its own id. The class stays in the host's
+          Java package whatever the application is called.
+        -->
+        <activity android:name="org.gowidgets.androidhost.GwHostActivity"
                   android:exported="true"
                   android:theme="@android:style/Theme.Material.NoActionBar"
                   android:configChanges="orientation|screenSize|keyboardHidden|density">

@@ -102,6 +102,13 @@ func Dial(title string, theme *toolkit.Theme) (*Client, error) {
 	if theme == nil {
 		theme = toolkit.DefaultDark()
 	}
+	// Every application reaching a host is running inside an APK, where Go
+	// cannot resolve a name on its own -- see InstallResolver. Doing it here
+	// rather than leaving it to each application is the difference between "GUI
+	// applications work" and "applications work": the first real program
+	// packaged this way was a news reader, and it drew its whole interface
+	// before failing every fetch.
+	InstallResolver()
 	conn, err := net.Dial("unix", "@"+name)
 	if err != nil {
 		return nil, fmt.Errorf("android: cannot reach the host: %w", err)

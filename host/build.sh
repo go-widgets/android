@@ -13,6 +13,20 @@ set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 root=$(dirname "$here")
 out=${OUT:-$here/out}
+# A pre-built application binary to package instead of building this repo's demo.
+# It must be a CGO-free android binary for $abi -- see the APP_BIN note below.
+appbin=${APP_BIN:-}
+# Package id, launcher label and output name. Overriding the id is what lets an
+# application coexist on a device with the demo, and with other applications
+# packaged by this same script.
+pkgid=${PACKAGE:-org.gowidgets.androidhost}
+label=${LABEL:-go-widgets}
+apkname=${APK:-gwhost}
+# Arguments handed to the packaged application, substituted into the manifest.
+appargs=${ARGS:-}
+# Space-separated permission names the packaged application needs, e.g.
+# "android.permission.INTERNET". Empty by default: least privilege is the point.
+appperms=${PERMISSIONS:-}
 abi=${ABI:-arm64-v8a}
 goarch=${GOARCH:-arm64}
 
@@ -34,9 +48,19 @@ export PATH
 rm -rf "$out"
 mkdir -p "$out/classes" "$out/lib/$abi"
 
-echo "==> go build (CGO_ENABLED=0 GOOS=android GOARCH=$goarch)"
-(cd "$root" && GOWORK=off CGO_ENABLED=0 GOOS=android GOARCH="$goarch" \
-    go build -trimpath -ldflags=-s -o "$out/lib/$abi/libgwapp.so" ${APP:-./cmd/gwapp})
+if [ -n "$appbin" ]; then
+    # $APP_BIN packages an application from ANOTHER module. The host does not
+    # care which Go program it spawns -- it owns the Activity and the surface,
+    # and the application owns the widgets -- so any CGO-free go-widgets binary
+    # is a valid payload. Building it is that module's business, not this
+    # script's, which cannot reach across a module boundary to do it.
+    echo "==> packaging pre-built $appbin"
+    cp "$appbin" "$out/lib/$abi/libgwapp.so"
+else
+    echo "==> go build (CGO_ENABLED=0 GOOS=android GOARCH=$goarch)"
+    (cd "$root" && GOWORK=off CGO_ENABLED=0 GOOS=android GOARCH="$goarch" \
+        go build -trimpath -ldflags=-s -o "$out/lib/$abi/libgwapp.so" ${APP:-./cmd/gwapp})
+fi
 
 echo "==> javac"
 find "$here/java" -name '*.java' > "$out/sources.txt"
@@ -48,8 +72,22 @@ find "$out/classes" -name '*.class' > "$out/classes.txt"
 d8 --lib "$androidjar" --min-api 26 --output "$out" @"$out/classes.txt"
 
 echo "==> aapt2 link"
+# The package id and the launcher label are substituted into a copy rather than
+# passed as flags: aapt2 can rename a package but has no say over the label, and
+# an application packaged here should be able to name itself. The copy lives
+# under $out so the checked-in manifest stays the demo's.
+permxml=""
+for p in $appperms; do
+    permxml="$permxml<uses-permission android:name=\"$p\" />"
+done
+
+sed -e "s|<!-- GW_PERMISSIONS -->|$permxml|" \
+    -e "s|package=\"org.gowidgets.androidhost\"|package=\"$pkgid\"|" \
+    -e "s|android:label=\"go-widgets\"|android:label=\"$label\"|" \
+    -e "s|android:name=\"org.gowidgets.args\" android:value=\"\"|android:name=\"org.gowidgets.args\" android:value=\"$appargs\"|" \
+    "$here/AndroidManifest.xml" > "$out/AndroidManifest.xml"
 aapt2 link -I "$androidjar" \
-    --manifest "$here/AndroidManifest.xml" \
+    --manifest "$out/AndroidManifest.xml" \
     --min-sdk-version 26 --target-sdk-version "$api" \
     -o "$out/base.apk"
 
@@ -66,9 +104,9 @@ if [ ! -f "$keystore" ]; then
         -alias gwhost -keyalg RSA -keysize 2048 -validity 10000 \
         -dname "CN=go-widgets android host" >/dev/null 2>&1
 fi
-zipalign -p -f 4 "$out/base.apk" "$out/gwhost.apk"
+zipalign -p -f 4 "$out/base.apk" "$out/$apkname.apk"
 apksigner sign --ks "$keystore" --ks-pass pass:android --key-pass pass:android \
-    --min-sdk-version 26 "$out/gwhost.apk"
+    --min-sdk-version 26 "$out/$apkname.apk"
 
-echo "==> $out/gwhost.apk"
-apksigner verify --print-certs "$out/gwhost.apk" | head -2
+echo "==> $out/$apkname.apk"
+apksigner verify --print-certs "$out/$apkname.apk" | head -2
