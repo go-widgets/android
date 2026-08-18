@@ -72,6 +72,7 @@ func scene(c *android.Client) toolkit.Widget {
 	box.Append(label)
 	box.Append(newTouchFloorRow())
 	box.Append(newIMERow(c))
+	box.Append(newScrollRegion())
 	return box
 }
 
@@ -152,4 +153,34 @@ func newIMERow(c *android.Client) *imeRow {
 	box.AddWidget(entry)
 	box.AddWidget(show)
 	return &imeRow{Container: box, entry: entry, show: show}
+}
+
+// scrollRows is how many rows the scrollable region holds: enough that the
+// content is several times the viewport, so there is somewhere to fling to.
+const (
+	scrollRows = 40
+	rowPx      = 60
+)
+
+// newScrollRegion returns a scrollable list of numbered rows.
+//
+// The demo carried no scrollable region until now, which meant the one thing
+// this back-end was built to make work — dragging content with a finger — had
+// never been seen on a device. The row labels are numbered so a screen dump can
+// say exactly how far the view has scrolled: the accessibility tree reports each
+// child shifted by ScrollView.ChildOffset, so "which row is at the top, and
+// where" IS the scroll position, readable from outside the process.
+func newScrollRegion() toolkit.Widget {
+	rows := toolkit.NewVBox()
+	for i := 0; i < scrollRows; i++ {
+		rows.Append(toolkit.NewLabel(fmt.Sprintf("row %02d", i)))
+	}
+	rows.SetBounds(toolkit.Rect{W: 1000, H: scrollRows * rowPx})
+	sv := toolkit.NewScrollView(rows)
+	// A ScrollView does not measure its child: it is TOLD how big the content
+	// is, and defaults to nothing. Without this there is no scroll range at all
+	// — a drag only stretches the rubber band, which then springs back, which
+	// looks exactly like a scroll that does not work.
+	sv.SetContentSize(1000, scrollRows*rowPx)
+	return sv
 }

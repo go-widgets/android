@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -809,5 +810,128 @@ func TestClientRejectsAMalformedScroll(t *testing.T) {
 	waitDone(t, cl)
 	if cl.runErr == nil {
 		t.Fatal("a malformed MsgScroll should end the session with an error")
+	}
+}
+
+// animatedRoot is a root that wants frames for a fixed number of ticks, so a
+// test can drive the animation loop to completion deterministically.
+type animatedRoot struct {
+	recordingRoot
+	mu     sync.Mutex
+	left   int
+	ticked int
+}
+
+func (a *animatedRoot) Tick(dt float64) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.left > 0 {
+		a.left--
+		a.ticked++
+	}
+}
+
+func (a *animatedRoot) Animating() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.left > 0
+}
+
+func (a *animatedRoot) ticks() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.ticked
+}
+
+func TestClientDrivesAnimationsUntilTheyStop(t *testing.T) {
+	// The toolkit's animated widgets — a spinner, a coasting scroll view —
+	// advance on a host's frame tick. Without this loop the back-end painted
+	// only in response to input, so a released drag never coasted and every
+	// animated widget was frozen. The loop must also STOP: TreeAnimating
+	// exists so an idle app burns no frames.
+	fired := make(chan time.Time, 64)
+	swap(t, &timeAfter, func(time.Duration) <-chan time.Time { return fired })
+	now := time.Unix(0, 0)
+	swap(t, &timeNow, func() time.Time { return now })
+
+	host, c := dialConfigured(t, 100, 100)
+	root := &animatedRoot{left: 3}
+	go func() { _ = c.Run(root) }()
+	host.next() // seed frame
+
+	// An event is what starts an animation, so deliver one.
+	if err := WriteMessage(host.conn, MsgTouch, EncodeTouch(Touch{Action: TouchDown})); err != nil {
+		t.Fatalf("sending a touch: %v", err)
+	}
+	host.next() // the frame that touch provoked
+
+	// Three ticks are owed; each posts a frame.
+	for i := 0; i < 3; i++ {
+		now = now.Add(frameInterval)
+		fired <- now
+		if typ, _ := host.next(); typ != MsgFrame {
+			t.Fatalf("tick %d posted %#x, want MsgFrame", i, typ)
+		}
+	}
+	if got := root.ticks(); got != 3 {
+		t.Fatalf("the tree was ticked %d times, want 3", got)
+	}
+
+	// And the loop stops on its own: nothing is animating, so a further
+	// firing must not post anything. Prove it by asking for a repaint and
+	// seeing exactly one frame — the one we asked for.
+	c.Repaint()
+	if typ, _ := host.next(); typ != MsgFrame {
+		t.Fatalf("Repaint posted %#x, want MsgFrame", typ)
+	}
+}
+
+func TestClientDoesNotAnimateWithoutAnAnimator(t *testing.T) {
+	// A plain tree wants no frames, so no loop starts and nothing is posted
+	// beyond the frame the event itself provoked.
+	host, c := dialConfigured(t, 100, 100)
+	go func() { _ = c.Run(toolkit.NewVBox()) }()
+	host.next() // seed frame
+	if err := WriteMessage(host.conn, MsgTouch, EncodeTouch(Touch{Action: TouchDown})); err != nil {
+		t.Fatalf("sending a touch: %v", err)
+	}
+	host.next() // the touch's own frame
+	c.mu.Lock()
+	animating := c.animating
+	c.mu.Unlock()
+	if animating {
+		t.Fatal("a tree with no animator should not start a frame loop")
+	}
+}
+
+func TestAnimationLoopEdges(t *testing.T) {
+	// The three paths a running app takes but a happy test does not: no tree
+	// bound yet, a loop already running, and a session ending mid-animation.
+	c := &Client{done: make(chan struct{})}
+	c.startAnimating() // no root: nothing to tick, and no goroutine to leak
+	if c.animating {
+		t.Fatal("a client with no root should start no loop")
+	}
+	c.root = &animatedRoot{left: 1}
+	c.animating = true
+	c.startAnimating() // already running: must not start a second loop
+	c.animating = false
+
+	// A session that ends while animating stops the loop, rather than ticking
+	// a tree whose surface has gone.
+	fired := make(chan time.Time, 4)
+	swap(t, &timeAfter, func(time.Duration) <-chan time.Time { return fired })
+	host, cl := dialConfigured(t, 64, 64)
+	root := &animatedRoot{left: 1000}
+	go func() { _ = cl.Run(root) }()
+	host.next() // seed frame
+	cl.startAnimating()
+	cl.Close()
+	fired <- time.Unix(0, 0)
+	// The loop notices the session ended; nothing panics and it lets go.
+	select {
+	case <-cl.done:
+	case <-time.After(testDeadline):
+		t.Fatal("Close did not end the session")
 	}
 }

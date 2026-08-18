@@ -106,6 +106,13 @@ public final class GwHostActivity extends Activity implements SurfaceHolder.Call
     private int surfaceW, surfaceH, density;
     private int insetL, insetT, insetR, insetB;
     private GwA11yProvider a11y;
+    // The pixel path and the socket path must not share a lock. blit() blocks on
+    // the display inside lockCanvas, and an animation posts 60 frames a second,
+    // so a monitor held across a blit stops the UI thread from sending the next
+    // touch: the application then sits idle waiting for input that is stuck
+    // behind a frame, alive and completely unresponsive.
+    private final Object pixelLock = new Object();
+    private final Object sendLock = new Object();
     private final AtomicReference<CountDownLatch> a11yArrived = new AtomicReference<>();
     private static final long A11Y_TIMEOUT_MS = 400;
     private volatile boolean running;
@@ -268,7 +275,8 @@ public final class GwHostActivity extends Activity implements SurfaceHolder.Call
      * on this side: the application is the only writer, and a shared file
      * mapping makes its writes visible here with no copy and no message.
      */
-    private synchronized void mapSurface(int w, int h) throws IOException {
+    private void mapSurface(int w, int h) throws IOException {
+      synchronized (pixelLock) {
         long size = (long) w * h * 4;
         // The application hands its framebuffer over as an ancillary descriptor
         // attached to the very message that announced it — a memfd, so the
@@ -290,6 +298,7 @@ public final class GwHostActivity extends Activity implements SurfaceHolder.Call
             tile = null;
         }
         staging = null;
+      }
     }
 
     /**
@@ -309,7 +318,8 @@ public final class GwHostActivity extends Activity implements SurfaceHolder.Call
      * nothing. Content outside the dirty rectangle is preserved by
      * {@link SurfaceHolder#lockCanvas(Rect)} itself.
      */
-    private synchronized void blit(int x, int y, int w, int h) {
+    private void blit(int x, int y, int w, int h) {
+      synchronized (pixelLock) {
         if (pixels == null || w <= 0 || h <= 0) {
             return;
         }
@@ -325,6 +335,7 @@ public final class GwHostActivity extends Activity implements SurfaceHolder.Call
         } finally {
             holder.unlockCanvasAndPost(canvas);
         }
+      }
     }
 
     /**
@@ -681,7 +692,8 @@ public final class GwHostActivity extends Activity implements SurfaceHolder.Call
     }
 
     /** Writes one framed message; a dead connection ends the Activity. */
-    private synchronized void send(int type, byte[] body) {
+    private void send(int type, byte[] body) {
+      synchronized (sendLock) {
         if (out == null) {
             return;
         }
@@ -694,6 +706,7 @@ public final class GwHostActivity extends Activity implements SurfaceHolder.Call
             Log.w(TAG, "send failed: " + e);
             out = null;
         }
+      }
     }
 
     private void closeQuietly() {

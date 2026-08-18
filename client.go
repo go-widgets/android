@@ -20,6 +20,7 @@ import (
 	"os"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/go-widgets/painter"
 	"github.com/go-widgets/toolkit"
@@ -49,15 +50,21 @@ type Client struct {
 	conn net.Conn
 	br   *bufio.Reader
 
-	mu       sync.Mutex // guards the mapping and every write to conn
-	buf      []byte     // RGBA framebuffer, mmap'd from the memfd shared with the host
-	file     *os.File
-	w, h     int
-	density  int
-	insets   Insets
-	shareFD  int           // framebuffer descriptor to hand the host, or -1
-	a11y     []A11yElement // last tree served, so an action can name an element
-	fullBled bool          // lay the root out edge to edge, ignoring the insets
+	mu sync.Mutex // guards the client's own state: the mapping, the tree, the insets
+	// wmu guards WRITES TO THE SOCKET, and nothing else. It has to be its own
+	// lock: a write blocks when the host is slower than the frames being posted
+	// — an animation posts 60 a second — and holding the state lock across that
+	// would stall the goroutine that dispatches input.
+	wmu       sync.Mutex
+	buf       []byte // RGBA framebuffer, mmap'd from the memfd shared with the host
+	file      *os.File
+	w, h      int
+	density   int
+	insets    Insets
+	shareFD   int           // framebuffer descriptor to hand the host, or -1
+	a11y      []A11yElement // last tree served, so an action can name an element
+	animating bool          // whether the frame loop is running
+	fullBled  bool          // lay the root out edge to edge, ignoring the insets
 
 	root       toolkit.Widget
 	dmg        damageRenderer
@@ -330,6 +337,11 @@ func (c *Client) deliver(evs []toolkit.Event) {
 	if root == nil {
 		return
 	}
+	// The widget tree is NOT goroutine-safe, and two goroutines reach it: this
+	// one, dispatching input, and the animation loop, ticking. They are
+	// serialised on c.mu — the same lock the paint holds — so a tick can never
+	// land in the middle of an event.
+	c.mu.Lock()
 	for _, ev := range evs {
 		if hasPosition(ev.Kind) {
 			ev.X -= origin.X
@@ -337,7 +349,9 @@ func (c *Client) deliver(evs []toolkit.Event) {
 		}
 		root.OnEvent(ev)
 	}
+	c.mu.Unlock()
 	c.frame()
+	c.startAnimating()
 }
 
 // layoutOriginLocked is where the root is laid out: the safe-area origin, or
@@ -564,8 +578,8 @@ func (c *Client) setPaused(p bool) {
 // frames posted from a repainting goroutine never interleave with a title
 // update.
 func (c *Client) send(typ uint8, body []byte) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.wmu.Lock()
+	defer c.wmu.Unlock()
 	return WriteMessage(c.conn, typ, body)
 }
 
@@ -575,8 +589,8 @@ func (c *Client) send(typ uint8, body []byte) error {
 // in-process test pipe), falls back to a plain write: the host then maps the
 // path it named itself.
 func (c *Client) sendFD(typ uint8, body []byte, fd int) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.wmu.Lock()
+	defer c.wmu.Unlock()
 	uc, ok := c.conn.(*net.UnixConn)
 	if fd < 0 || !ok {
 		return WriteMessage(c.conn, typ, body)
@@ -626,3 +640,81 @@ func (c *Client) SetSoftKeyboard(show bool) {
 	}
 	_ = c.send(MsgKeyboard, []byte{b})
 }
+
+// The animation loop.
+//
+// The toolkit's animated widgets — a spinner, a progress bar, a skeleton, and
+// the touch-scroll coast — advance on a host's frame tick: [toolkit.TickTree]
+// walks the tree calling Tick(dt), and [toolkit.TreeAnimating] reports whether
+// anything still needs frames. This back-end had no such loop at all, so it
+// painted only in response to input. A released drag therefore never coasted,
+// and every animated widget was frozen on Android.
+//
+// The loop is DEMAND-DRIVEN: it starts when something begins animating and
+// stops as soon as nothing is, which is exactly what TreeAnimating exists to
+// allow. An idle app therefore burns no frames, which matters more on a
+// battery than anywhere else.
+
+// frameInterval is the tick period while something is animating: 60 Hz, the
+// cadence a phone's display runs at.
+const frameInterval = time.Second / 60
+
+// startAnimating makes sure the tick loop is running, if anything wants frames.
+// It is called after every delivery, because an event is what starts an
+// animation in the first place.
+func (c *Client) startAnimating() {
+	c.mu.Lock()
+	root := c.root
+	if root == nil || c.animating {
+		c.mu.Unlock()
+		return
+	}
+	if !toolkit.TreeAnimating(root) {
+		c.mu.Unlock()
+		return
+	}
+	c.animating = true
+	c.mu.Unlock()
+	go c.animate()
+}
+
+// animate ticks the tree until nothing is animating, painting each frame.
+func (c *Client) animate() {
+	defer func() {
+		c.mu.Lock()
+		c.animating = false
+		c.mu.Unlock()
+	}()
+	last := timeNow()
+	for {
+		select {
+		case <-c.done:
+			return
+		case <-timeAfter(frameInterval):
+		}
+		now := timeNow()
+		dt := now.Sub(last).Seconds()
+		last = now
+
+		// root is bound once, by Run, and never cleared — startAnimating
+		// refuses to start without it — so it cannot become nil here.
+		c.mu.Lock()
+		root := c.root
+		toolkit.TickTree(root, dt)
+		c.mu.Unlock()
+		c.frame()
+		c.mu.Lock()
+		still := toolkit.TreeAnimating(root)
+		c.mu.Unlock()
+		if !still {
+			return
+		}
+	}
+}
+
+// timeNow and timeAfter are the clock, behind variables so a test can drive the
+// loop deterministically instead of waiting on a real one.
+var (
+	timeNow   = time.Now
+	timeAfter = time.After
+)
