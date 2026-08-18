@@ -120,6 +120,18 @@ An activation comes back as an ordinary click at the element's centre, so an
 accessibility action goes through the very code a touch does, with no second
 path to drift from the first — the rule the AT-SPI bridge already follows.
 
+### Touch
+
+Each pointer sample reaches the widget tree as **two** events: the touch event
+first, then a mouse event.
+
+go-widgets models touch directly — `EventTouchStart`/`Move`/`End` carry a
+pointer id in `Event.Code`, and `toolkit.GestureRecognizer` turns them into
+taps, long presses and swipes. A back-end emitting only mouse events would
+leave every gesture-aware widget deaf on the one kind of device gestures are
+for. The compatibility mouse event follows because most widgets listen for
+`EventClick`; a browser does exactly this, for exactly this reason.
+
 ### System bars
 
 An Android window is edge-to-edge from API 35: the surface really is the whole
