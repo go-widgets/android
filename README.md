@@ -116,6 +116,18 @@ attached never builds one — which is also what keeps this from repeating
 go-widgets/window's macOS mistake of rebuilding the whole tree inside the paint
 loop and freezing the machine.
 
+Measured, again with process CPU over ten-second windows: **0 ticks** with nobody
+reading, and **0 ticks** across ten full reads — because one read is far below
+what a 100 Hz counter can see. `BenchmarkA11yElements`, run on the device, says
+what it actually costs:
+
+```
+BenchmarkA11yElements-4   237154   10052 ns/op   20944 B/op   9 allocs/op
+```
+
+Ten microseconds for a 41-widget tree. That is the number behind "too cheap to
+measure", and it is why pulling on demand costs nothing worth avoiding.
+
 An activation comes back as an ordinary click at the element's centre, so an
 accessibility action goes through the very code a touch does, with no second
 path to drift from the first — the rule the AT-SPI bridge already follows.
@@ -142,9 +154,20 @@ only in response to input: a released drag never coasted and every animated
 widget was frozen.
 
 The loop is demand-driven. It starts when something begins animating and stops
-the moment nothing is, which is exactly what `TreeAnimating` exists to allow, so
-an idle app burns no frames — which matters more on a battery than anywhere
-else.
+the moment nothing is, which is exactly what `TreeAnimating` exists to allow.
+That is measured rather than asserted — CPU time of the application process,
+from `/proc/<pid>/stat`, over ten-second windows:
+
+| window | CPU ticks |
+|---|---|
+| ten seconds idle, untouched | **0** |
+| a fling, then ten seconds | 30 |
+| ten seconds after it settled | **0** |
+
+So the loop really does not run when nothing is animating, and really does stop
+afterwards. (The 30 ticks — 300 ms of CPU — cover the gesture and the coast on
+a software-rendered emulator, where every frame is a full-surface repaint and
+blit; a device with a GPU-composited surface does less.)
 
 The widget tree is not goroutine-safe and two goroutines now reach it, one
 dispatching input and one ticking, so they are serialised on the same lock the

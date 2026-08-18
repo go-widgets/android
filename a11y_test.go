@@ -146,3 +146,23 @@ func TestA11yElementCenter(t *testing.T) {
 		t.Fatalf("Center = (%d,%d), want (60,40)", x, y)
 	}
 }
+
+// BenchmarkA11yElements measures what one accessibility read actually costs,
+// because the coarse instrument — process CPU ticks at 100 Hz — could not see
+// it at all: ten reads of the demo's tree stayed at zero ticks. "Too cheap to
+// measure" is not a number, so here is one.
+func BenchmarkA11yElements(b *testing.B) {
+	box := toolkit.NewVBox()
+	for i := 0; i < 40; i++ {
+		box.Append(toolkit.NewLabel("row"))
+	}
+	box.Append(toolkit.NewButton("Click me", func() {}))
+	box.SetBounds(toolkit.Rect{W: 1080, H: 2400})
+
+	b.ReportAllocs()
+	for b.Loop() {
+		if els := A11yElements(box); len(els) == 0 {
+			b.Fatal("the walk produced nothing")
+		}
+	}
+}
