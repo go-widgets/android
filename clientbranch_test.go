@@ -569,3 +569,66 @@ func TestClientRejectsMalformedA11yAction(t *testing.T) {
 		t.Fatal("a malformed MsgA11yAction should end the session with an error")
 	}
 }
+
+func TestClientSecondFingerIsTouchOnly(t *testing.T) {
+	// Two fingers must reach the tree as two contacts, but as ONE mouse
+	// stream: a pinch that fired two EventClicks would read as two taps to
+	// every widget, and the toolkit's MultiTouchRecognizer needs both ids.
+	host, c := dialConfigured(t, 200, 200)
+	events := make(chan toolkit.Event, 16)
+	go func() { _ = c.Run(&recordingRoot{events: events}) }()
+	host.next() // seed frame
+
+	for _, tch := range []Touch{
+		{Action: TouchDown, X: 10, Y: 10, ID: 7}, // first contact: primary
+		{Action: TouchDown, X: 90, Y: 90, ID: 8}, // second: touch only
+		{Action: TouchMove, X: 80, Y: 80, ID: 8},
+		{Action: TouchMove, X: 20, Y: 20, ID: 7},
+		{Action: TouchUp, X: 80, Y: 80, ID: 8},
+	} {
+		if err := WriteMessage(host.conn, MsgTouch, EncodeTouch(tch)); err != nil {
+			t.Fatalf("sending a touch: %v", err)
+		}
+	}
+	want := []struct {
+		kind toolkit.EventKind
+		code string
+	}{
+		{toolkit.EventTouchStart, "7"}, {toolkit.EventClick, ""},
+		{toolkit.EventTouchStart, "8"}, // no click for the second finger
+		{toolkit.EventTouchMove, "8"},  // nor a drag
+		{toolkit.EventTouchMove, "7"}, {toolkit.EventMouseDrag, ""},
+		{toolkit.EventTouchEnd, "8"}, // nor a mouse-up
+	}
+	for i, w := range want {
+		select {
+		case got := <-events:
+			if got.Kind != w.kind || got.Code != w.code {
+				t.Fatalf("event %d = %v code=%q, want %v code=%q", i, got.Kind, got.Code, w.kind, w.code)
+			}
+		case <-time.After(testDeadline):
+			t.Fatalf("event %d never arrived", i)
+		}
+	}
+}
+
+func TestClientPrimaryFollowsTheFirstContactDown(t *testing.T) {
+	// The primary contact is the first finger down while none is. After every
+	// finger lifts, the next one to land becomes primary in its turn --
+	// otherwise a second gesture would be mouse-silent forever.
+	c := &Client{}
+	if held, primary := c.pointerState(Touch{Action: TouchDown, ID: 3}); held || !primary {
+		t.Fatalf("first contact: held=%v primary=%v, want false/true", held, primary)
+	}
+	if held, primary := c.pointerState(Touch{Action: TouchDown, ID: 4}); !held || primary {
+		t.Fatalf("second contact: held=%v primary=%v, want true/false", held, primary)
+	}
+	if _, primary := c.pointerState(Touch{Action: TouchMove, ID: 3}); !primary {
+		t.Fatal("a move of the primary contact stays primary")
+	}
+	c.pointerState(Touch{Action: TouchUp, ID: 3})
+	c.pointerState(Touch{Action: TouchUp, ID: 4})
+	if held, primary := c.pointerState(Touch{Action: TouchDown, ID: 9}); held || !primary {
+		t.Fatalf("after all lift, a new contact: held=%v primary=%v, want false/true", held, primary)
+	}
+}

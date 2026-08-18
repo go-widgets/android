@@ -466,30 +466,52 @@ public final class GwHostActivity extends Activity implements SurfaceHolder.Call
         send(MSG_CONFIG, body);
     }
 
+    /**
+     * Forwards one MotionEvent, every contact of it.
+     *
+     * <p>Android batches multi-touch: ACTION_POINTER_DOWN and ACTION_POINTER_UP
+     * announce the second and later fingers, and a single ACTION_MOVE carries a
+     * NEW POSITION FOR EVERY CONTACT AT ONCE. Forwarding only
+     * {@code getX()/getY()} — pointer index 0 — meant a second finger never
+     * reached the application at all, so the toolkit's MultiTouchRecognizer
+     * (pinch, rotate, two-finger pan) could never engage on Android.
+     */
     @Override
     public boolean onTouchEvent(MotionEvent e) {
-        int action;
         switch (e.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
-                action = TOUCH_DOWN;
-                break;
+            case MotionEvent.ACTION_POINTER_DOWN:
+                sendTouch(TOUCH_DOWN, e, e.getActionIndex());
+                return true;
             case MotionEvent.ACTION_UP:
+            case MotionEvent.ACTION_POINTER_UP:
+                sendTouch(TOUCH_UP, e, e.getActionIndex());
+                return true;
             case MotionEvent.ACTION_CANCEL:
-                action = TOUCH_UP;
-                break;
+                // The gesture was taken away from us: lift every contact, or
+                // the application would believe fingers are still down.
+                for (int i = 0; i < e.getPointerCount(); i++) {
+                    sendTouch(TOUCH_UP, e, i);
+                }
+                return true;
             case MotionEvent.ACTION_MOVE:
-                action = TOUCH_MOVE;
-                break;
+                for (int i = 0; i < e.getPointerCount(); i++) {
+                    sendTouch(TOUCH_MOVE, e, i);
+                }
+                return true;
             default:
                 return true;
         }
+    }
+
+    /** Sends one contact of a MotionEvent, named by its POINTER INDEX. */
+    private void sendTouch(int action, MotionEvent e, int index) {
         byte[] body = new byte[13];
         body[0] = (byte) action;
-        putInt(body, 1, Math.round(e.getX()));
-        putInt(body, 5, Math.round(e.getY()));
-        putInt(body, 9, e.getPointerId(e.getActionIndex()));
+        putInt(body, 1, Math.round(e.getX(index)));
+        putInt(body, 5, Math.round(e.getY(index)));
+        putInt(body, 9, e.getPointerId(index));
         send(MSG_TOUCH, body);
-        return true;
     }
 
     @Override
