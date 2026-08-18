@@ -29,6 +29,11 @@ func main() {
 // Off Android there is no host to dial, so it reports that and succeeds — the
 // command cross-builds and runs everywhere, as window's cmd/windowdemo does.
 func run() error {
+	// Select the touch density before any widget is built: on Android every
+	// widget sizes for the finger; off Android this is a no-op and the compact
+	// desktop default stands. See density_android.go / density_other.go.
+	applyDensity()
+
 	c, err := android.Dial("go-widgets on Android", nil)
 	if errors.Is(err, android.ErrUnsupported) {
 		fmt.Println("gwapp:", err)
