@@ -142,9 +142,20 @@ only in response to input: a released drag never coasted and every animated
 widget was frozen.
 
 The loop is demand-driven. It starts when something begins animating and stops
-the moment nothing is, which is exactly what `TreeAnimating` exists to allow, so
-an idle app burns no frames — which matters more on a battery than anywhere
-else.
+the moment nothing is, which is exactly what `TreeAnimating` exists to allow.
+That is measured rather than asserted — CPU time of the application process,
+from `/proc/<pid>/stat`, over ten-second windows:
+
+| window | CPU ticks |
+|---|---|
+| ten seconds idle, untouched | **0** |
+| a fling, then ten seconds | 30 |
+| ten seconds after it settled | **0** |
+
+So the loop really does not run when nothing is animating, and really does stop
+afterwards. (The 30 ticks — 300 ms of CPU — cover the gesture and the coast on
+a software-rendered emulator, where every frame is a full-surface repaint and
+blit; a device with a GPU-composited surface does less.)
 
 The widget tree is not goroutine-safe and two goroutines now reach it, one
 dispatching input and one ticking, so they are serialised on the same lock the
