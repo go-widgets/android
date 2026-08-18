@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Copyright (c) the go-widgets/android authors. All rights reserved.
+  SPDX-License-Identifier: BSD-3-Clause
+
+  The accessibility probe: a test instrument, in its own package so it is never
+  part of the shipped demo.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+          package="org.gowidgets.a11yprobe">
+
+    <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="35" />
+
+    <application android:label="gw a11y probe" android:hasCode="true">
+        <service android:name=".GwProbeService"
+                 android:exported="true"
+                 android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data android:name="android.accessibilityservice"
+                       android:resource="@xml/probe_config" />
+        </service>
+    </application>
+</manifest>

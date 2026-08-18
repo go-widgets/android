@@ -231,20 +231,39 @@ Deliberate, and none of them protocol-deep:
 - **no IME** — a soft keyboard needs `InputConnection` on the host and a text
   model above;
 
-## License
+### The accessibility path, measured with a real client
 
-BSD-3-Clause. See [LICENSE](LICENSE).
+`adb shell uiautomator dump` reports `clickable="false"` on the button. That
+attribute is an artefact of the dump, not a property of the node: asked the way
+a screen reader asks, the framework returns something else entirely.
 
-### One open point
+`host/probe/` is a real `AccessibilityService` — a test instrument, in its own
+package, never part of the shipped app — that queries the node and activates it.
+Against the live demo it reports:
 
-`uiautomator dump` reports `clickable="false"` on the button node, while the
-node this host hands the framework carries `isClickable() == true` and three
-actions including `ACTION_CLICK` (verified by logging the node just before
-returning it). So the flag is set and lost somewhere downstream on this AOSP
-image. The activation path itself is proven end to end on the application side:
-a fake host sending `MsgA11yAction` reaches the widget through the ordinary
-click path.
+```
+PROBE found text=Click me class=android.widget.Button clickable=true
+      actions=[ACTION_CLICK, ACTION_ACCESSIBILITY_FOCUS, ACTION_CLEAR_ACCESSIBILITY_FOCUS]
+      bounds=[0,1418][1080,1844]
+PROBE performAction(ACTION_CLICK) returned true
+PROBE found text=Click me, pressed ...
+```
 
+So the node a screen reader sees IS clickable, it DOES carry `ACTION_CLICK`, and
+performing that action reaches the Go widget: two activations left the demo
+reading `clicks: 2`, and the button's own value changed to `pressed` between the
+two reads. What TalkBack decides "double-tap to activate" from is the action
+list, which is present.
+
+Run it with:
+
+```sh
+host/probe/build.sh && adb install -r host/probe/out/gwprobe.apk
+adb shell settings put secure enabled_accessibility_services \
+    org.gowidgets.a11yprobe/org.gowidgets.a11yprobe.GwProbeService
+adb shell settings put secure accessibility_enabled 1
+adb logcat -s gw-a11y-probe
+```
 #### What is and is not proven about multi-touch
 
 The application half is proven deterministically and on the device: a real
@@ -257,3 +276,8 @@ multi-touch injection through `/dev/input` does not reach the app on this
 emulator, because `input` uses Android's injection API rather than the input
 devices. A single contact is verified end to end; the second-contact path is
 reviewed code, not measured behaviour, until it runs on real hardware.
+
+## License
+
+BSD-3-Clause. See [LICENSE](LICENSE).
+
