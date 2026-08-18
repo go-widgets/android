@@ -244,3 +244,16 @@ returning it). So the flag is set and lost somewhere downstream on this AOSP
 image. The activation path itself is proven end to end on the application side:
 a fake host sending `MsgA11yAction` reaches the widget through the ordinary
 click path.
+
+#### What is and is not proven about multi-touch
+
+The application half is proven deterministically and on the device: a real
+`toolkit.MultiTouchRecognizer`, fed this back-end's own output for two contacts,
+engages and reports a pinch out and a pinch in.
+
+The **host** half — forwarding every contact of a `MotionEvent` — is not proven
+on a device. `adb shell input` injects a single pointer, and kernel-level
+multi-touch injection through `/dev/input` does not reach the app on this
+emulator, because `input` uses Android's injection API rather than the input
+devices. A single contact is verified end to end; the second-contact path is
+reviewed code, not measured behaviour, until it runs on real hardware.

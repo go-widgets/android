@@ -61,7 +61,8 @@ type Client struct {
 
 	root       toolkit.Widget
 	dmg        damageRenderer
-	held       bool // pointer state, so a move picks drag vs move
+	down       map[int]bool // contacts currently down, by pointer id
+	primary    int          // the contact that also drives the mouse events
 	paused     bool
 	configured chan struct{} // closed once the first Config has been mapped
 	configOnce sync.Once
@@ -218,7 +219,8 @@ func (c *Client) dispatch(typ uint8, body []byte) bool {
 			c.shutdown(err, false)
 			return false
 		}
-		c.deliver(MapTouch(t, c.pointerHeld(t)))
+		held, primary := c.pointerState(t)
+		c.deliver(MapTouch(t, held, primary))
 	case MsgKey:
 		k, err := DecodeKey(body)
 		if err != nil {
@@ -264,20 +266,31 @@ func (c *Client) dispatch(typ uint8, body []byte) bool {
 	return true
 }
 
-// pointerHeld returns the button state to map t against, then folds t into it:
-// a press holds the pointer down, a release lifts it, so the NEXT move maps to
-// a drag exactly as the X11 and wasmbox back-ends do.
-func (c *Client) pointerHeld(t Touch) bool {
+// pointerState folds one sample into the client's contact bookkeeping and
+// reports how to map it: whether a pointer was already down before this sample
+// (so a move becomes a drag), and whether this contact is the PRIMARY one.
+//
+// The primary contact is the first finger down while no other is. Only it gets
+// compatibility mouse events, because a second finger must not fire a second
+// EventClick: a two-finger pinch would otherwise read as two taps to every
+// widget in the tree. A browser draws the same line for the same reason.
+func (c *Client) pointerState(t Touch) (held, primary bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	held := c.held
+	held = len(c.down) > 0
 	switch t.Action {
 	case TouchDown:
-		c.held = true
+		if len(c.down) == 0 {
+			c.primary = t.ID
+		}
+		if c.down == nil {
+			c.down = map[int]bool{}
+		}
+		c.down[t.ID] = true
 	case TouchUp:
-		c.held = false
+		delete(c.down, t.ID)
 	}
-	return held
+	return held, t.ID == c.primary
 }
 
 // deliver hands mapped events to the widget tree and repaints. A paused

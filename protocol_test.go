@@ -159,43 +159,51 @@ func TestWriteMessageErrors(t *testing.T) {
 
 func TestMapTouch(t *testing.T) {
 	cases := []struct {
-		name string
-		t    Touch
-		held bool
-		want []toolkit.Event
+		name    string
+		t       Touch
+		held    bool
+		primary bool
+		want    []toolkit.Event
 	}{
 		// Each sample yields the touch event a gesture-aware widget needs,
 		// then the mouse event every other widget listens for.
-		{"press", Touch{Action: TouchDown, X: 3, Y: 4, ID: 1}, false,
+		{"press", Touch{Action: TouchDown, X: 3, Y: 4, ID: 1}, false, true,
 			[]toolkit.Event{
 				{Kind: toolkit.EventTouchStart, X: 3, Y: 4, Code: "1"},
 				{Kind: toolkit.EventClick, X: 3, Y: 4},
 			}},
-		{"release", Touch{Action: TouchUp, X: 3, Y: 4, ID: 1}, true,
+		{"release", Touch{Action: TouchUp, X: 3, Y: 4, ID: 1}, true, true,
 			[]toolkit.Event{
 				{Kind: toolkit.EventTouchEnd, X: 3, Y: 4, Code: "1"},
 				{Kind: toolkit.EventMouseUp, X: 3, Y: 4},
 			}},
-		{"move with the finger down is a drag", Touch{Action: TouchMove, X: 5, Y: 6}, true,
+		{"move with the finger down is a drag", Touch{Action: TouchMove, X: 5, Y: 6}, true, true,
 			[]toolkit.Event{
 				{Kind: toolkit.EventTouchMove, X: 5, Y: 6, Code: "0"},
 				{Kind: toolkit.EventMouseDrag, X: 5, Y: 6},
 			}},
-		{"move with no finger down", Touch{Action: TouchMove, X: 5, Y: 6}, false,
+		{"move with no finger down", Touch{Action: TouchMove, X: 5, Y: 6}, false, true,
 			[]toolkit.Event{
 				{Kind: toolkit.EventTouchMove, X: 5, Y: 6, Code: "0"},
 				{Kind: toolkit.EventMouseMove, X: 5, Y: 6},
 			}},
-		{"a second finger keeps its own id", Touch{Action: TouchDown, X: 9, Y: 9, ID: 2}, false,
+		{"a second finger is touch-only: no second click", Touch{Action: TouchDown, X: 9, Y: 9, ID: 2}, true, false,
 			[]toolkit.Event{
 				{Kind: toolkit.EventTouchStart, X: 9, Y: 9, Code: "2"},
-				{Kind: toolkit.EventClick, X: 9, Y: 9},
 			}},
-		{"an action the host does not forward", Touch{Action: 99}, false, nil},
+		{"a non-primary move is touch-only too", Touch{Action: TouchMove, X: 9, Y: 9, ID: 2}, true, false,
+			[]toolkit.Event{
+				{Kind: toolkit.EventTouchMove, X: 9, Y: 9, Code: "2"},
+			}},
+		{"and a non-primary release", Touch{Action: TouchUp, X: 9, Y: 9, ID: 2}, true, false,
+			[]toolkit.Event{
+				{Kind: toolkit.EventTouchEnd, X: 9, Y: 9, Code: "2"},
+			}},
+		{"an action the host does not forward", Touch{Action: 99}, false, true, nil},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if got := MapTouch(c.t, c.held); !slices.Equal(got, c.want) {
+			if got := MapTouch(c.t, c.held, c.primary); !slices.Equal(got, c.want) {
 				t.Fatalf("MapTouch = %+v, want %+v", got, c.want)
 			}
 		})
@@ -210,7 +218,7 @@ func TestMapTouch(t *testing.T) {
 func TestMapTouchDrivesTheGestureRecognizer(t *testing.T) {
 	feed := func(g *toolkit.GestureRecognizer, samples ...Touch) {
 		for _, s := range samples {
-			for _, ev := range MapTouch(s, s.Action == TouchMove) {
+			for _, ev := range MapTouch(s, s.Action == TouchMove, true) {
 				g.Feed(ev)
 			}
 		}
@@ -373,5 +381,49 @@ func TestInsetsApply(t *testing.T) {
 	}
 	if !(Insets{}).Empty() || (Insets{Top: 1}).Empty() {
 		t.Fatal("Empty should report exactly the zero Insets")
+	}
+}
+
+// TestMapTouchDrivesTheMultiTouchRecognizer feeds a real
+// toolkit.MultiTouchRecognizer the events this back-end produces for two
+// fingers. It is the proof that the host's multi-contact forwarding and the
+// toolkit's pinch/rotate/pan engine actually meet: the recognizer keys contacts
+// by Event.Code, and before the host forwarded every pointer, a second contact
+// never arrived and the recognizer could not engage on Android at all.
+func TestMapTouchDrivesTheMultiTouchRecognizer(t *testing.T) {
+	m := toolkit.NewMultiTouchRecognizer()
+	var engaged bool
+	var lastScale float64 = 1
+	m.OnMultiBegin = func(toolkit.MultiTouchState) { engaged = true }
+	m.OnPinch = func(scale float64) { lastScale = scale }
+
+	feed := func(samples ...Touch) {
+		for _, s := range samples {
+			// Only the primary contact carries mouse events; the recognizer
+			// reads the touch ones, which every contact has.
+			for _, ev := range MapTouch(s, true, s.ID == 1) {
+				m.Feed(ev)
+			}
+		}
+	}
+
+	// One finger: nothing to engage on.
+	feed(Touch{Action: TouchDown, X: 100, Y: 100, ID: 1})
+	if engaged {
+		t.Fatal("a single contact must not engage a multi-touch gesture")
+	}
+	// A second finger 100 px away engages, and spreading them apart pinches out.
+	feed(Touch{Action: TouchDown, X: 200, Y: 100, ID: 2})
+	if !engaged {
+		t.Fatal("a second contact should engage the recognizer")
+	}
+	feed(Touch{Action: TouchMove, X: 300, Y: 100, ID: 2})
+	if lastScale <= 1 {
+		t.Fatalf("spreading the fingers should pinch out: scale=%v, want > 1", lastScale)
+	}
+	// Bringing them back together pinches in.
+	feed(Touch{Action: TouchMove, X: 150, Y: 100, ID: 2})
+	if lastScale >= 1 {
+		t.Fatalf("closing the fingers should pinch in: scale=%v, want < 1", lastScale)
 	}
 }

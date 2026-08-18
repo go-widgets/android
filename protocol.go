@@ -318,45 +318,44 @@ func ReadMessage(r io.Reader) (typ uint8, body []byte, err error) {
 
 // MapTouch maps one pointer sample to toolkit events.
 //
-// It emits TWO events per sample: the touch event first, then a mouse event.
-// That is not belt and braces, it is what a touch platform owes a toolkit that
-// has both. go-widgets models touch directly — EventTouchStart/Move/End carry
-// a pointer id in Event.Code, and GestureRecognizer turns them into taps, long
-// presses and swipes — so a back-end that only emitted mouse events would
-// leave every gesture-aware widget deaf on the one kind of device gestures are
-// for. The compatibility mouse event follows because most widgets, and every
-// widget written before touch existed, listen for EventClick; a browser does
-// exactly this, for exactly this reason.
+// A contact always yields its touch event — EventTouchStart/Move/End with the
+// pointer id in Event.Code, which is what toolkit's GestureRecognizer and
+// MultiTouchRecognizer key contacts by.
+//
+// Only the PRIMARY contact also yields a compatibility mouse event. Most
+// widgets, and every widget written before touch existed, listen for
+// EventClick; but a second finger must not fire a second click, or a pinch
+// would read as two taps to every widget in the tree. A browser draws the line
+// in the same place, for the same reason.
 //
 // The mouse half mirrors the wasmbox and X11 mappings: a press is a click, a
-// move with the finger down is a drag. A touch screen has no hover, so a move
-// with no finger down cannot occur and is mapped to a plain move rather than
+// move with a finger down is a drag. A touch screen has no hover, so a move
+// with nothing down cannot occur and is mapped to a plain move rather than
 // dropped, keeping a synthetic host (a test, a replay) honest.
-func MapTouch(t Touch, held bool) []toolkit.Event {
+func MapTouch(t Touch, held, primary bool) []toolkit.Event {
 	id := strconv.Itoa(t.ID)
+	var touch, mouse toolkit.Event
 	switch t.Action {
 	case TouchDown:
-		return []toolkit.Event{
-			{Kind: toolkit.EventTouchStart, X: t.X, Y: t.Y, Code: id},
-			{Kind: toolkit.EventClick, X: t.X, Y: t.Y},
-		}
+		touch = toolkit.Event{Kind: toolkit.EventTouchStart, X: t.X, Y: t.Y, Code: id}
+		mouse = toolkit.Event{Kind: toolkit.EventClick, X: t.X, Y: t.Y}
 	case TouchUp:
-		return []toolkit.Event{
-			{Kind: toolkit.EventTouchEnd, X: t.X, Y: t.Y, Code: id},
-			{Kind: toolkit.EventMouseUp, X: t.X, Y: t.Y},
-		}
+		touch = toolkit.Event{Kind: toolkit.EventTouchEnd, X: t.X, Y: t.Y, Code: id}
+		mouse = toolkit.Event{Kind: toolkit.EventMouseUp, X: t.X, Y: t.Y}
 	case TouchMove:
+		touch = toolkit.Event{Kind: toolkit.EventTouchMove, X: t.X, Y: t.Y, Code: id}
 		kind := toolkit.EventMouseMove
 		if held {
 			kind = toolkit.EventMouseDrag
 		}
-		return []toolkit.Event{
-			{Kind: toolkit.EventTouchMove, X: t.X, Y: t.Y, Code: id},
-			{Kind: kind, X: t.X, Y: t.Y},
-		}
+		mouse = toolkit.Event{Kind: kind, X: t.X, Y: t.Y}
 	default:
 		return nil
 	}
+	if !primary {
+		return []toolkit.Event{touch}
+	}
+	return []toolkit.Event{touch, mouse}
 }
 
 // Android KeyEvent key codes the toolkit has a named key for. Only the codes
