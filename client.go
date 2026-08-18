@@ -64,7 +64,11 @@ type Client struct {
 	shareFD   int           // framebuffer descriptor to hand the host, or -1
 	a11y      []A11yElement // last tree served, so an action can name an element
 	animating bool          // whether the frame loop is running
-	fullBled  bool          // lay the root out edge to edge, ignoring the insets
+	// now and after are the clock, per-client so a test can drive the frame
+	// loop deterministically instead of waiting on a real one.
+	now      func() time.Time
+	after    func(time.Duration) <-chan time.Time
+	fullBled bool // lay the root out edge to edge, ignoring the insets
 
 	root       toolkit.Widget
 	dmg        damageRenderer
@@ -110,6 +114,8 @@ func Dial(title string, theme *toolkit.Theme) (*Client, error) {
 		configured: make(chan struct{}),
 		done:       make(chan struct{}),
 		shareFD:    -1,
+		now:        time.Now,
+		after:      time.After,
 	}
 	go c.pump()
 	select {
@@ -685,14 +691,20 @@ func (c *Client) animate() {
 		c.animating = false
 		c.mu.Unlock()
 	}()
-	last := timeNow()
+	// The clock is read ONCE, under the lock, into locals: it is per-client
+	// state a test replaces before the loop starts, and reading it from this
+	// goroutine on every tick would race with that write.
+	c.mu.Lock()
+	nowFn, afterFn := c.now, c.after
+	c.mu.Unlock()
+	last := nowFn()
 	for {
 		select {
 		case <-c.done:
 			return
-		case <-timeAfter(frameInterval):
+		case <-afterFn(frameInterval):
 		}
-		now := timeNow()
+		now := nowFn()
 		dt := now.Sub(last).Seconds()
 		last = now
 
@@ -711,10 +723,3 @@ func (c *Client) animate() {
 		}
 	}
 }
-
-// timeNow and timeAfter are the clock, behind variables so a test can drive the
-// loop deterministically instead of waiting on a real one.
-var (
-	timeNow   = time.Now
-	timeAfter = time.After
-)

@@ -850,11 +850,23 @@ func TestClientDrivesAnimationsUntilTheyStop(t *testing.T) {
 	// animated widget was frozen. The loop must also STOP: TreeAnimating
 	// exists so an idle app burns no frames.
 	fired := make(chan time.Time, 64)
-	swap(t, &timeAfter, func(time.Duration) <-chan time.Time { return fired })
-	now := time.Unix(0, 0)
-	swap(t, &timeNow, func() time.Time { return now })
+	var clock struct {
+		sync.Mutex
+		now time.Time
+	}
+	clock.now = time.Unix(0, 0)
 
 	host, c := dialConfigured(t, 100, 100)
+	// Replace the clock under the lock the loop reads it under, before any
+	// animation can start.
+	c.mu.Lock()
+	c.after = func(time.Duration) <-chan time.Time { return fired }
+	c.now = func() time.Time {
+		clock.Lock()
+		defer clock.Unlock()
+		return clock.now
+	}
+	c.mu.Unlock()
 	root := &animatedRoot{left: 3}
 	go func() { _ = c.Run(root) }()
 	host.next() // seed frame
@@ -867,8 +879,11 @@ func TestClientDrivesAnimationsUntilTheyStop(t *testing.T) {
 
 	// Three ticks are owed; each posts a frame.
 	for i := 0; i < 3; i++ {
-		now = now.Add(frameInterval)
-		fired <- now
+		clock.Lock()
+		clock.now = clock.now.Add(frameInterval)
+		tick := clock.now
+		clock.Unlock()
+		fired <- tick
 		if typ, _ := host.next(); typ != MsgFrame {
 			t.Fatalf("tick %d posted %#x, want MsgFrame", i, typ)
 		}
@@ -907,7 +922,7 @@ func TestClientDoesNotAnimateWithoutAnAnimator(t *testing.T) {
 func TestAnimationLoopEdges(t *testing.T) {
 	// The three paths a running app takes but a happy test does not: no tree
 	// bound yet, a loop already running, and a session ending mid-animation.
-	c := &Client{done: make(chan struct{})}
+	c := &Client{done: make(chan struct{}), now: time.Now, after: time.After}
 	c.startAnimating() // no root: nothing to tick, and no goroutine to leak
 	if c.animating {
 		t.Fatal("a client with no root should start no loop")
@@ -920,8 +935,10 @@ func TestAnimationLoopEdges(t *testing.T) {
 	// A session that ends while animating stops the loop, rather than ticking
 	// a tree whose surface has gone.
 	fired := make(chan time.Time, 4)
-	swap(t, &timeAfter, func(time.Duration) <-chan time.Time { return fired })
 	host, cl := dialConfigured(t, 64, 64)
+	cl.mu.Lock()
+	cl.after = func(time.Duration) <-chan time.Time { return fired }
+	cl.mu.Unlock()
 	root := &animatedRoot{left: 1000}
 	go func() { _ = cl.Run(root) }()
 	host.next() // seed frame
