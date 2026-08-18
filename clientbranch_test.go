@@ -776,3 +776,38 @@ func TestClientRejectsAMalformedDelete(t *testing.T) {
 		t.Fatal("a malformed MsgTextDelete should end the session with an error")
 	}
 }
+
+func TestClientScrollReachesTheTree(t *testing.T) {
+	host, c := dialConfigured(t, 200, 200)
+	events := make(chan toolkit.Event, 8)
+	go func() { _ = c.Run(&recordingRoot{events: events}) }()
+	host.next() // seed frame
+
+	if err := WriteMessage(host.conn, MsgScroll, EncodeScroll(Scroll{
+		X: 30, Y: 40, DetentX: 1, DetentY: -2,
+	})); err != nil {
+		t.Fatalf("sending a scroll: %v", err)
+	}
+	select {
+	case got := <-events:
+		// The position is translated into the root's space like any other
+		// positioned event; with no insets here it is unchanged.
+		want := toolkit.Event{Kind: toolkit.EventScroll, X: 30, Y: 40, Delta: 2, DeltaX: 1}
+		if got != want {
+			t.Fatalf("scroll = %+v, want %+v", got, want)
+		}
+	case <-time.After(testDeadline):
+		t.Fatal("the scroll never reached the tree")
+	}
+}
+
+func TestClientRejectsAMalformedScroll(t *testing.T) {
+	host, cl := dialConfigured(t, 100, 100)
+	if err := WriteMessage(host.conn, MsgScroll, []byte{1, 2}); err != nil {
+		t.Fatalf("sending: %v", err)
+	}
+	waitDone(t, cl)
+	if cl.runErr == nil {
+		t.Fatal("a malformed MsgScroll should end the session with an error")
+	}
+}

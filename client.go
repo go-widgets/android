@@ -241,6 +241,13 @@ func (c *Client) dispatch(typ uint8, body []byte) bool {
 		if changed {
 			c.frame()
 		}
+	case MsgScroll:
+		s, err := DecodeScroll(body)
+		if err != nil {
+			c.shutdown(err, false)
+			return false
+		}
+		c.deliver(MapScroll(s))
 	case MsgText:
 		c.deliver(MapText(string(body)))
 	case MsgTextDelete:

@@ -132,6 +132,23 @@ leave every gesture-aware widget deaf on the one kind of device gestures are
 for. The compatibility mouse event follows because most widgets listen for
 `EventClick`; a browser does exactly this, for exactly this reason.
 
+### Wheels and trackpads
+
+A finger on the glass is never a scroll — it is a drag, and arrives as touch.
+But a Chromebook, a DeX desktop or a tablet with a mouse has a real pointing
+device, and its notches reach a view through `onGenericMotionEvent`, not
+`onTouchEvent`. Those are forwarded too, on both axes.
+
+Android reports a wheel detent as `+1` for UP, the opposite of the toolkit's
+convention where a positive `Delta` scrolls toward the END of the content, so
+the vertical axis is negated. The horizontal one is not: `AXIS_HSCROLL` is
+already positive to the right, which is what `Event.DeltaX` means. A notch with
+no movement on either axis produces nothing at all, so a device reporting an
+idle scroll wakes no widget.
+
+Measured on device: `input mouse scroll ... --axis VSCROLL,1` and
+`--axis HSCROLL,-1` both reach the host with the axis values intact.
+
 ### The soft keyboard
 
 Only the host can raise a keyboard — the keyboard is a window, and an
