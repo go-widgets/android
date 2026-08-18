@@ -132,6 +132,39 @@ leave every gesture-aware widget deaf on the one kind of device gestures are
 for. The compatibility mouse event follows because most widgets listen for
 `EventClick`; a browser does exactly this, for exactly this reason.
 
+### Animations, and the frame loop that drives them
+
+The toolkit's animated widgets — a spinner, a progress bar, a skeleton, a
+coasting scroll view — advance on a host's frame tick: `toolkit.TickTree` walks
+the tree calling `Tick(dt)`, and `toolkit.TreeAnimating` reports whether
+anything still wants frames. **This back-end had no such loop**, so it painted
+only in response to input: a released drag never coasted and every animated
+widget was frozen.
+
+The loop is demand-driven. It starts when something begins animating and stops
+the moment nothing is, which is exactly what `TreeAnimating` exists to allow, so
+an idle app burns no frames — which matters more on a battery than anywhere
+else.
+
+The widget tree is not goroutine-safe and two goroutines now reach it, one
+dispatching input and one ticking, so they are serialised on the same lock the
+paint holds. Socket writes take a **separate** lock: a write blocks when the
+host is slower than the frames being posted, and holding the state lock across
+that would stall the reader that dispatches input.
+
+Measured on device, with a scrollable region of 40 rows (the accessibility tree
+reports each row shifted by `ScrollView.ChildOffset`, so "where is row 00" *is*
+the scroll position, readable from outside the process):
+
+| gesture | content moved |
+|---|---|
+| 120 px drag over 1200 ms | 188 px |
+| the same 120 px in 120 ms | **796 px** |
+
+Same finger distance, four times the travel: the difference is the coast. A pull
+past the top springs back to exactly the top — the rubber band itself is too
+brief to catch with a screen dump, which takes hundreds of milliseconds.
+
 ### Wheels and trackpads
 
 A finger on the glass is never a scroll — it is a drag, and arrives as touch.
