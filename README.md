@@ -132,6 +132,33 @@ leave every gesture-aware widget deaf on the one kind of device gestures are
 for. The compatibility mouse event follows because most widgets listen for
 `EventClick`; a browser does exactly this, for exactly this reason.
 
+### The soft keyboard
+
+Only the host can raise a keyboard — the keyboard is a window, and an
+application that owns no windows cannot raise one — so an application asks with
+`Client.SetSoftKeyboard(true)`.
+
+What comes back is **not keystrokes**. A soft keyboard commits finished text
+through an `InputConnection`, sometimes several characters at once (a word
+completion, an emoji, a paste), and spells backspace as "delete n characters
+before the cursor". This back-end turns each committed rune into the
+`EventKeyDown` + `EventChar` pair a printable key produces, and each deletion
+into that many `Backspace` key-downs — which is exactly what the X11 and wasmbox
+back-ends emit. **Every toolkit text widget therefore works with no
+Android-specific code**: the demo's `Entry` has none.
+
+Composition is deliberately not modelled: the application is told only about
+committed text, so a half-typed word never reaches the widget tree and then has
+to be taken back.
+
+Measured on device, with LatinIME:
+
+```
+tap "keyboard"  → dumpsys input_method: mInputShown=true, mIsInputViewShown=true
+type "hello"    → the Entry reports text="hello" class="android.widget.EditText"
+backspace ×2    → text="hel"
+```
+
 ### System bars
 
 An Android window is edge-to-edge from API 35: the surface really is the whole
@@ -236,8 +263,6 @@ Deliberate, and none of them protocol-deep:
 
 - **single touch** — the protocol carries a pointer id, the host forwards one.
   Multi-touch, fling and inertial scroll are toolkit work, not host work;
-- **no IME** — a soft keyboard needs `InputConnection` on the host and a text
-  model above;
 
 ### The accessibility path, measured with a real client
 

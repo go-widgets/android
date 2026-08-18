@@ -37,6 +37,9 @@ func (c *Client) Insets() Insets { return Insets{} }
 // SetFullBleed has no surface to bleed over.
 func (c *Client) SetFullBleed(bool) {}
 
+// SetSoftKeyboard has no host to ask for a keyboard.
+func (c *Client) SetSoftKeyboard(bool) {}
+
 // Repaint has nothing to repaint.
 func (c *Client) Repaint() {}
 
