@@ -409,8 +409,14 @@ Android 15 / arm64 unless stated otherwise:
 
 Deliberate, and none of them protocol-deep:
 
-- **single touch** — the protocol carries a pointer id, the host forwards one.
-  Multi-touch, fling and inertial scroll are toolkit work, not host work;
+- **multi-contact is forwarded but NOT device-proven** — since v0.7.0 the host
+  handles `ACTION_POINTER_DOWN`/`UP` and loops over `getPointerCount()`, so every
+  contact crosses the wire with its pointer id, and the toolkit has both a
+  `MultiTouchRecognizer` and momentum scrolling to receive them. What is missing
+  is the proof: `adb shell input` injects ONE pointer, and kernel `/dev/input`
+  injection does not reach the app (a `getevent` control shows a real tap
+  producing no kernel events, because `input` uses Android's injection API). So
+  this needs real hardware, not more code;
 
 ### The accessibility path, measured with a real client
 
