@@ -6,8 +6,8 @@ github.com/coder/websocket v1.8.15 h1:6B2JPeOGlpff2Uz6vOEH1Vzpi0iUz20A+lPVhPHtNU
 github.com/coder/websocket v1.8.15/go.mod h1:NX3SzP+inril6yawo5CQXx8+fk145lPDC6pumgx0mVg=
 github.com/go-crdt/collab v0.18.0 h1:/2o4Sv1hgYVgXu+8MPaDR1sXGBqS7OJ4f7lMDYXNCUg=
 github.com/go-crdt/collab v0.18.0/go.mod h1:aewsJvSDKC1gculiUJsrkwOTsf78w1TVj7OiUnerti0=
-github.com/go-crdt/crdt v0.22.0 h1:BwLTqFMu3ktLSl9yp32Ws0R6+K611UsrEZ67oIYN850=
-github.com/go-crdt/crdt v0.22.0/go.mod h1:vbfvns9B9FUaMi2sPKzMYttKmbxfgO7EK3Yu82SrlYw=
+github.com/go-crdt/crdt v0.25.0 h1:BZsr5sKnjGmwyXd82WJ3SjDK+Ehhutr9qhvbXFFm8XM=
+github.com/go-crdt/crdt v0.25.0/go.mod h1:vbfvns9B9FUaMi2sPKzMYttKmbxfgO7EK3Yu82SrlYw=
 github.com/go-gfx/gfx v0.6.0 h1:sQkGEmB9YLouHxrscwvS4OW6oELsTtrKtQqsNdJ8L8Q=
 github.com/go-gfx/gfx v0.6.0/go.mod h1:bFt/MWyYWRU3Ic9IaB8XOC9KLMMHRRmahMk4FaIGK7g=
 github.com/go-iconoir/iconoir v0.2.0 h1:2ANqG6gkvHMoCtpNgNhSeOsuGMnlWQ+Sl43EndujIC0=
@@ -32,8 +32,8 @@ github.com/go-widgets/mvvm v0.8.0 h1:DqyNiNNTdITkMOdAwGvWFuCd6xpTaDRS2S+LNxd8inA
 github.com/go-widgets/mvvm v0.8.0/go.mod h1:GuGxC1kVTiPWANsAfKBPFb2YlmoG55J3NmZauvyqJ6w=
 github.com/go-widgets/painter v0.11.0 h1:xsj4zTz8B43rOZnWrx7ZsaUBMgJyvgaE/Pq2FfcG2Sw=
 github.com/go-widgets/painter v0.11.0/go.mod h1:IPRLqdUJuJX8sfuHeYLZCzjoLvA0ApbOlyIAVmguJDQ=
-github.com/go-widgets/toolkit v0.223.0 h1:9DegSojfMgAacARkahQhA6EdB0oP7cEB2PQhFWccr5k=
-github.com/go-widgets/toolkit v0.223.0/go.mod h1:X5yAnlGdp7wz6Hy4aOo6VDO6xthSTlX1v+JHA4yekBc=
+github.com/go-widgets/toolkit v0.226.0 h1:emQuzCdVJhC4gT8rlSc/NUFiL+geMffywx0TdZu7PSU=
+github.com/go-widgets/toolkit v0.226.0/go.mod h1:dtu0LE6KVnV7U9R85LkCMiZ5bUL1vRT++OSGAUp8IEQ=
 github.com/golang/protobuf v1.5.4 h1:i7eJL8qZTpSEXOPTxNKhASYpMn+8e5Q6AdndVa1dWek=
 github.com/golang/protobuf v1.5.4/go.mod h1:lnTiLA8Wa4RWRcIUkrtSVa5nRhsEGBg48fD6rSs7xps=
 github.com/google/go-cmp v0.7.0 h1:wk8382ETsv4JYUZwIsn6YpYiWiBsYLSJiTsyBybVuN8=
