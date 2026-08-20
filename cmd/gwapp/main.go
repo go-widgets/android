@@ -66,7 +66,7 @@ func scene(c *android.Client) toolkit.Widget {
 	label := toolkit.NewLabel("clicks: 0")
 	btn := toolkit.NewButton("Click me", func() {
 		clicks++
-		label.Text = fmt.Sprintf("clicks: %d", clicks)
+		label.Text().Set(fmt.Sprintf("clicks: %d", clicks))
 	})
 	box.Append(btn)
 	box.Append(label)
@@ -108,7 +108,7 @@ func newTouchFloorRow() *touchFloorRow {
 	report := toolkit.NewLabel("tiny: 0")
 	tiny := toolkit.NewButton("·", func() {
 		hits++
-		report.Text = fmt.Sprintf("tiny: %d", hits)
+		report.Text().Set(fmt.Sprintf("tiny: %d", hits))
 	})
 	c := toolkit.NewContainer(nil)
 	c.AddWidget(tiny)
