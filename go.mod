@@ -3,23 +3,24 @@ module github.com/go-widgets/android
 go 1.26.4
 
 require (
-	github.com/go-widgets/painter v0.11.0
-	github.com/go-widgets/toolkit v0.230.0
+	github.com/go-widgets/painter v0.12.0
+	github.com/go-widgets/toolkit v0.284.0
 	golang.org/x/sys v0.47.0
 )
 
 require (
 	github.com/andybalholm/brotli v1.2.2 // indirect
 	github.com/coder/websocket v1.8.15 // indirect
-	github.com/go-crdt/collab v0.18.0 // indirect
-	github.com/go-crdt/crdt v0.25.0 // indirect
-	github.com/go-gfx/gfx v0.6.0 // indirect
+	github.com/go-crdt/collab v0.25.0 // indirect
+	github.com/go-crdt/crdt v0.31.0 // indirect
+	github.com/go-gfx/gfx v0.11.0 // indirect
 	github.com/go-iconoir/iconoir v0.2.0 // indirect
+	github.com/go-icons/iconoir v0.2.0 // indirect
 	github.com/go-images/images v0.0.0-20260815210351-4a50ef5ab734 // indirect
 	github.com/go-opentype/fonts v0.8.0 // indirect
 	github.com/go-opentype/opentype v0.6.0 // indirect
 	github.com/go-opentype/shape v0.5.0 // indirect
-	github.com/go-richdoc/richdoc v0.1.0 // indirect
+	github.com/go-richdoc/richdoc v0.2.0 // indirect
 	github.com/go-typeset/bidi v0.3.0 // indirect
 	github.com/go-widgets/mvvm v0.8.0 // indirect
 	github.com/sergeymakinen/go-bmp v1.0.0 // indirect
