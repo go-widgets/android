@@ -4,17 +4,18 @@ go 1.26.4
 
 require (
 	github.com/go-widgets/painter v0.12.0
-	github.com/go-widgets/toolkit v0.286.0
+	github.com/go-widgets/toolkit v0.293.0
 	golang.org/x/sys v0.47.0
 )
 
 require (
+	github.com/ajroetker/go-highway v0.0.4 // indirect
+	github.com/ajroetker/go-jpeg2000 v0.0.2 // indirect
 	github.com/andybalholm/brotli v1.2.2 // indirect
 	github.com/coder/websocket v1.8.15 // indirect
-	github.com/go-crdt/collab v0.25.0 // indirect
-	github.com/go-crdt/crdt v0.31.0 // indirect
-	github.com/go-gfx/gfx v0.11.0 // indirect
-	github.com/go-iconoir/iconoir v0.2.0 // indirect
+	github.com/go-crdt/collab v0.33.0 // indirect
+	github.com/go-crdt/crdt v0.35.0 // indirect
+	github.com/go-gfx/gfx v0.18.0 // indirect
 	github.com/go-icons/iconoir v0.2.0 // indirect
 	github.com/go-images/images v0.0.0-20260815210351-4a50ef5ab734 // indirect
 	github.com/go-opentype/fonts v0.8.0 // indirect
@@ -25,6 +26,7 @@ require (
 	github.com/go-widgets/mvvm v0.8.0 // indirect
 	github.com/sergeymakinen/go-bmp v1.0.0 // indirect
 	github.com/sergeymakinen/go-ico v1.0.0 // indirect
+	github.com/tannevaled/gobig2 v0.1.0 // indirect
 	golang.org/x/image v0.45.0 // indirect
 	golang.org/x/net v0.49.0 // indirect
 	golang.org/x/text v0.41.0 // indirect
