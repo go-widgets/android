@@ -14,6 +14,8 @@ github.com/go-crdt/crdt v0.35.0 h1:8IGUNQo7+S9MfdTFX2miW2l+DxYClDyg+4qmYAmXpnY=
 github.com/go-crdt/crdt v0.35.0/go.mod h1:vbfvns9B9FUaMi2sPKzMYttKmbxfgO7EK3Yu82SrlYw=
 github.com/go-gfx/gfx v0.18.0 h1:wWpOHvJ/FEthx7RHUIt3ZKn/xDZ+Eb7KncZCJU/P/L8=
 github.com/go-gfx/gfx v0.18.0/go.mod h1:VAK6hgCgkhT3j3ek2K7G8zDfkCPD3RCF45UbcRlCV8Q=
+github.com/go-gfx/gfx v0.19.0 h1:nA2Eg8Aq2kytR5Hrm/eQ6618w4vT0+Ao8BMZiuYh84c=
+github.com/go-gfx/gfx v0.19.0/go.mod h1:VAK6hgCgkhT3j3ek2K7G8zDfkCPD3RCF45UbcRlCV8Q=
 github.com/go-icons/iconoir v0.2.0 h1:I5AnDEIPgYfawTmwzemDRJjlYCUbFHuS8GJXrjADhXc=
 github.com/go-icons/iconoir v0.2.0/go.mod h1:Td/M2vy4xdVv4aOudAskV0nXR9Wv0MlhWvyRIzPBz5U=
 github.com/go-images/images v0.0.0-20260815210351-4a50ef5ab734 h1:nU+MGeyJzidGvCtx+HLZgHKG9GpUUomkQvB5nXLRWoc=
@@ -38,6 +40,8 @@ github.com/go-widgets/painter v0.12.0 h1:gMqTVbIbGSKmaE28NKsbbKdNIk2drupNMNuLjFP
 github.com/go-widgets/painter v0.12.0/go.mod h1:IPRLqdUJuJX8sfuHeYLZCzjoLvA0ApbOlyIAVmguJDQ=
 github.com/go-widgets/toolkit v0.293.0 h1:V27E7D6CrMRSnvSjFuQyCHvuClviri4i030TQ08CDdw=
 github.com/go-widgets/toolkit v0.293.0/go.mod h1:HuSAQoeN3V1CyRqX1tLYuQqHsoLMZIsNqS+TYnowphg=
+github.com/go-widgets/toolkit v0.298.0 h1:Gx6F6PdqWnG9suXGEPm5I3LhlFwli+2yeeiG/y1jGkA=
+github.com/go-widgets/toolkit v0.298.0/go.mod h1:oQuOK+iE7Dc1xG1EXsBeO5Kjdf+091uIZSVu3AVLXwc=
 github.com/golang/protobuf v1.5.4 h1:i7eJL8qZTpSEXOPTxNKhASYpMn+8e5Q6AdndVa1dWek=
 github.com/golang/protobuf v1.5.4/go.mod h1:lnTiLA8Wa4RWRcIUkrtSVa5nRhsEGBg48fD6rSs7xps=
 github.com/google/go-cmp v0.7.0 h1:wk8382ETsv4JYUZwIsn6YpYiWiBsYLSJiTsyBybVuN8=
