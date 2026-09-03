@@ -14,10 +14,14 @@ github.com/go-crdt/collab v0.33.0 h1:bFswNxL+bXSgLY9JLVF6iOEDADM11HkdeU6uA3S72co
 github.com/go-crdt/collab v0.33.0/go.mod h1:YbO+X4Tq/FOQzsui7vreO9U+ucblThW42ifdlRA4qqs=
 github.com/go-crdt/collab v0.36.1 h1:2NTn1iKFoUHnNSeD2hAyy+8bCnpeUI57W7yQ1CY5bko=
 github.com/go-crdt/collab v0.36.1/go.mod h1:CNtopa+kzRg3jfb2bES9+rEIavVrb52IbDcfVV05+6E=
+github.com/go-crdt/collab v0.37.0 h1:tLtDqao5GODY2pxE/wcEA8U9I/rPdN4LvjEPeE4/QwA=
+github.com/go-crdt/collab v0.37.0/go.mod h1:kxTeZDZ6p8wC9gEkf2iWgFg2870lYliHJyCC6vDlsAs=
 github.com/go-crdt/crdt v0.35.0 h1:8IGUNQo7+S9MfdTFX2miW2l+DxYClDyg+4qmYAmXpnY=
 github.com/go-crdt/crdt v0.35.0/go.mod h1:vbfvns9B9FUaMi2sPKzMYttKmbxfgO7EK3Yu82SrlYw=
 github.com/go-crdt/crdt v0.37.0 h1:offp5UlAqIt2lQwvWamguRBWp6yZs4uUhVISfqw2+l0=
 github.com/go-crdt/crdt v0.37.0/go.mod h1:vbfvns9B9FUaMi2sPKzMYttKmbxfgO7EK3Yu82SrlYw=
+github.com/go-crdt/crdt v0.39.0 h1:DJimBDQqmdqKVCAiU4k1aCWPgXeZ+id/FbO09DklTBw=
+github.com/go-crdt/crdt v0.39.0/go.mod h1:vbfvns9B9FUaMi2sPKzMYttKmbxfgO7EK3Yu82SrlYw=
 github.com/go-gfx/gfx v0.18.0 h1:wWpOHvJ/FEthx7RHUIt3ZKn/xDZ+Eb7KncZCJU/P/L8=
 github.com/go-gfx/gfx v0.18.0/go.mod h1:VAK6hgCgkhT3j3ek2K7G8zDfkCPD3RCF45UbcRlCV8Q=
 github.com/go-gfx/gfx v0.19.0 h1:nA2Eg8Aq2kytR5Hrm/eQ6618w4vT0+Ao8BMZiuYh84c=
@@ -28,6 +32,8 @@ github.com/go-images/images v0.0.0-20260815210351-4a50ef5ab734 h1:nU+MGeyJzidGvC
 github.com/go-images/images v0.0.0-20260815210351-4a50ef5ab734/go.mod h1:ObuOBKDEidGX0LqLKY/5nqj7JVN/hsCzHMAJd0TNc0k=
 github.com/go-images/images v0.0.0-20260830151046-7e8189dc2288 h1:+ljs5FdeIrwsVzMdH43o72xjzBIc8ZJ/gnW6KK0tRrw=
 github.com/go-images/images v0.0.0-20260830151046-7e8189dc2288/go.mod h1:Rz3bjq22JH21J8ipYRVLsJCB7QAEDjfHnxR7JCOmc54=
+github.com/go-images/images v0.0.0-20260831115433-23d959d868e3 h1:SinmtXWpA4a30ZQ5A9QI9YrsYvytmLGeTRVbXqqEezw=
+github.com/go-images/images v0.0.0-20260831115433-23d959d868e3/go.mod h1:Epqq+oFyfwKIS4zmrr12eZVtCuwXhoxV6E+OBEnNsFs=
 github.com/go-logr/logr v1.4.3 h1:CjnDlHq8ikf6E492q6eKboGOC0T8CDaOvkHCIg8idEI=
 github.com/go-logr/logr v1.4.3/go.mod h1:9T104GzyrTigFIr8wt5mBrctHMim0Nb2HLGrmQ40KvY=
 github.com/go-logr/stdr v1.2.2 h1:hSWxHoqTgW2S2qGc0LTAI563KZ5YKYRhT3MFKZMbjag=
@@ -60,6 +66,8 @@ github.com/go-widgets/toolkit v0.298.0 h1:Gx6F6PdqWnG9suXGEPm5I3LhlFwli+2yeeiG/y
 github.com/go-widgets/toolkit v0.298.0/go.mod h1:oQuOK+iE7Dc1xG1EXsBeO5Kjdf+091uIZSVu3AVLXwc=
 github.com/go-widgets/toolkit v0.300.0 h1:vyQ6oN/XsfUPo/WYzrjD5AIFPEj1X1OVaJd7yihmxJk=
 github.com/go-widgets/toolkit v0.300.0/go.mod h1:5G/reoXwETtl6LJGB56471Sqv6keCIYVkhx/bvFPB+g=
+github.com/go-widgets/toolkit v0.301.0 h1:ymKltlmsMiMIHDObIiljo2umNF+ArbTmLD/Dg/9AYNw=
+github.com/go-widgets/toolkit v0.301.0/go.mod h1:NMj7CghnZKC+L9BRaAcKjykewTChSFuuTuVH+2wDjV4=
 github.com/golang/protobuf v1.5.4 h1:i7eJL8qZTpSEXOPTxNKhASYpMn+8e5Q6AdndVa1dWek=
 github.com/golang/protobuf v1.5.4/go.mod h1:lnTiLA8Wa4RWRcIUkrtSVa5nRhsEGBg48fD6rSs7xps=
 github.com/google/go-cmp v0.7.0 h1:wk8382ETsv4JYUZwIsn6YpYiWiBsYLSJiTsyBybVuN8=
