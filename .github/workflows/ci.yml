@@ -83,6 +83,30 @@ jobs:
   # apksigner against the runner's own SDK. This proves the shipped host
   # sources and build.sh still produce a signed, installable package, and that
   # the Go application still cross-builds into it.
+  # The Windows peer of darwin-stub. The module already CROSS-BUILDS for
+  # windows/amd64 and windows/arm64 in the `cross` job, which proves it
+  # compiles and nothing more; this runs the suite on a real Windows host, the
+  # way darwin-stub does for macOS.
+  #
+  # CGO_ENABLED goes in env rather than in front of each command: the POSIX
+  # prefix that darwin-stub uses is read by PowerShell as a command it cannot
+  # find, which is the reason several repositories in this fleet had no Windows
+  # lane at all.
+  windows-stub:
+    name: windows (stub)
+    runs-on: windows-latest
+    env:
+      CGO_ENABLED: "0"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      - run: go vet ./...
+      - run: go build ./...
+      - run: go test ./...
+
+
   apk:
     name: apk (host + application)
     runs-on: ubuntu-latest
