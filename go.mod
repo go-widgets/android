@@ -5,7 +5,7 @@ go 1.26.4
 require (
 	github.com/go-widgets/painter v0.13.0
 	github.com/go-widgets/toolkit v0.316.0
-	golang.org/x/sys v0.47.0
+	golang.org/x/sys v0.48.0
 )
 
 require (
