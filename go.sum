@@ -5,8 +5,8 @@ github.com/dsnet/compress v0.0.2-0.20230904184137-39efe44ab707/go.mod h1:qssHWj6
 github.com/dsnet/golib v0.0.0-20171103203638-1ea166775780/go.mod h1:Lj+Z9rebOhdfkVLjJ8T6VcRQv3SXugXy999NBtR9aFY=
 github.com/go-crdt/crdt v0.57.0 h1:sNLDTVCEnSb20gm77BUuYav8dzj5krmly/z9O7eRMCo=
 github.com/go-crdt/crdt v0.57.0/go.mod h1:zdVTTDLGV5JYAoTJDqCivcAT+/B5gGebDsVd8QNZpVs=
-github.com/go-gfx/gfx v0.36.1 h1:dnqxna+69Hr5ioGadB2UDe6wrXeqwPOhqftr6YONgpQ=
-github.com/go-gfx/gfx v0.36.1/go.mod h1:Tst3pkyuqFV13Ab98WZVxgJmFN4GZtTKoqwRkBZKko8=
+github.com/go-gfx/gfx v0.37.0 h1:nQH23BtuJ1pqXqvg0s7FHSI1c/ewg9nnBl3Nc3cYCik=
+github.com/go-gfx/gfx v0.37.0/go.mod h1:4OenoKrgdht6UXYf5SV8w2tb41hfAdy4QoxJRPsRDz4=
 github.com/go-icons/iconoir v0.3.0 h1:kHG2sU5IsCvtBS1JICuXgfFo5f8UfwY1m7KYMVy97CI=
 github.com/go-icons/iconoir v0.3.0/go.mod h1:lPh5OuzVQ+rR4qDPGgAdSRUhnCbHeCAX70HDdwp8/RI=
 github.com/go-images/images v0.1.1-0.20261026203936-4ac989d310a1 h1:R7Phx1lhFniaqF+k7yE72HcadFeViKYXXb9w2puZJRI=
@@ -23,10 +23,10 @@ github.com/go-typeset/bidi v0.3.1 h1:fsTa0b9txt2SkH7M55EZ06+q3N9C4O0Oerf+SPLLGFs
 github.com/go-typeset/bidi v0.3.1/go.mod h1:ct3cmYT8Qt1FGJQ+2QaakrUxqaP4ZysgdQQg2ym5+Xo=
 github.com/go-widgets/mvvm v0.15.0 h1:VvZiLB7gm+5CIEeQH3GNI53ytUndzOznT/fJvaG8hOQ=
 github.com/go-widgets/mvvm v0.15.0/go.mod h1:ZJj5M8zDg/gdzcvdWnJgZj/fcV0qe84fALq+EQVzUOM=
-github.com/go-widgets/painter v0.16.0 h1:j8FFObisySQChY2JiXS7Di2Mo4cqufIc0PDUnoDPMiA=
-github.com/go-widgets/painter v0.16.0/go.mod h1:3wKWjaM8ZgEhir2HX0UDt8GemePKJ7l/yIjQb/vVSWk=
-github.com/go-widgets/toolkit v0.345.2 h1:M8xEpwsb5JJVeCQrjShQEexc0rZz/+zWBxw3dlsuNHo=
-github.com/go-widgets/toolkit v0.345.2/go.mod h1:CfZ1nZLl0aRsASVdW3v/oJ6voSa4yXwe0FNU1whlos8=
+github.com/go-widgets/painter v0.16.1 h1:cKY736gXuZrS3keDHtf6EtDkA505cJrlxVawHNJsYbU=
+github.com/go-widgets/painter v0.16.1/go.mod h1:1ebqg88C/kD/+oLTQaIvQ2KHjR24FabpqIEjteGxOag=
+github.com/go-widgets/toolkit v0.349.1 h1:j9rnfN3xIFhZ35VNO2+45OyNjfku+Hvz3vvJkXfiu5g=
+github.com/go-widgets/toolkit v0.349.1/go.mod h1:D2m3vKHYyT0d34HPxgghh+aEVw7DnQeDE5KeI/d/H1M=
 github.com/google/go-cmp v0.5.5/go.mod h1:v8dTdLbMG2kIc/vJvl+f65V22dbkXbowE6jgT/gNBxE=
 github.com/klauspost/compress v1.4.1/go.mod h1:RyIbtBH6LamlWaDj8nUwkbUhJ87Yi3uG0guNDohfE1A=
 github.com/klauspost/cpuid v1.2.0/go.mod h1:Pj4uuM528wm8OyEC2QMXAi2YiTZ96dNQPGgoMS4s3ek=
