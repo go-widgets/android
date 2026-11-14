@@ -4,14 +4,29 @@
 
 package android
 
-import (
-	"context"
-	"net"
-	"os"
-	"strings"
-	"sync/atomic"
-	"time"
-)
+import "github.com/go-aosp/hostenv"
+
+// # WHY THIS IS NOW A DELEGATION
+//
+// The mechanism below was written here and proven here, on a real installable
+// APK. It is not widget code: nothing in it knows about a surface, a socket or
+// a widget tree, and its only imports were from the standard library.
+//
+// That made it unreachable for its next consumers. This package is a widget
+// back-end carrying a socket protocol, a client, an a11y bridge and twelve
+// indirect dependencies; a package manager or a daemon cannot take all of that
+// to get a resolver, so the next one writes a second copy -- and one was in
+// fact drafted in go-zpkg/artifact before it was deleted (go-zpkg/artifact#235).
+//
+// So it moved to github.com/go-aosp/hostenv, which imports nothing but the
+// standard library, and this file keeps the names that were already published.
+//
+// ⛔ THE EXPORTED NAMES STAY, AND THEY ARE NOT DEPRECATED. EnvDNS is set by
+// this repository's own Java host (host/java/.../GwHostActivity.java) and by
+// anything built on it, and InstallResolver is called from client.go. Deleting
+// either would break a contract that is already in the field, for no gain: a
+// one-line delegation costs nothing and the move stays invisible to every
+// caller.
 
 // EnvDNS names the environment variable the Java host sets to the system's DNS
 // servers, comma separated, when it spawns the application.
@@ -21,10 +36,7 @@ import (
 // resolver therefore finds no nameserver, falls back to localhost, and every
 // lookup fails with a connection refused. The host can see the real servers
 // through ConnectivityManager, so it passes them here.
-const EnvDNS = "GW_ANDROID_DNS"
-
-// resolverDial is the dialer InstallResolver uses, replaceable in tests.
-var resolverDial = (&net.Dialer{Timeout: 5 * time.Second}).DialContext
+const EnvDNS = hostenv.EnvDNS
 
 // InstallResolver points net.DefaultResolver at the DNS servers named by
 // $GW_ANDROID_DNS, and reports whether it did.
@@ -34,38 +46,6 @@ var resolverDial = (&net.Dialer{Timeout: 5 * time.Second}).DialContext
 // ACCESS_NETWORK_STATE, the default resolver is either already correct or
 // deliberately absent, and silently rewiring it would be worse than leaving it.
 //
-// Dial is called with the address Go picked from its (empty) configuration and
-// ignores it, substituting a configured server chosen by attempt: the first is
-// tried first, and a retry moves to the next, so a dead server does not pin
-// every lookup to it. Each server keeps the network Go asked for -- "udp" or
-// "tcp", the latter when a truncated answer must be re-fetched -- because the
-// choice is the resolver's, not ours.
-func InstallResolver() bool {
-	servers := parseServers(os.Getenv(EnvDNS))
-	if len(servers) == 0 {
-		return false
-	}
-	var attempt atomic.Uint64
-	net.DefaultResolver = &net.Resolver{
-		PreferGo: true,
-		Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
-			n := attempt.Add(1) - 1
-			return resolverDial(ctx, network, servers[n%uint64(len(servers))])
-		},
-	}
-	return true
-}
-
-// parseServers splits the host's comma-separated list into dialable addresses,
-// dropping empties and bracketing IPv6 literals, which need it before a port.
-func parseServers(raw string) []string {
-	var out []string
-	for _, s := range strings.Split(raw, ",") {
-		s = strings.TrimSpace(s)
-		if s == "" {
-			continue
-		}
-		out = append(out, net.JoinHostPort(s, "53"))
-	}
-	return out
-}
+// Since the move it also accepts hostenv.EnvDNSAlias, so a host that prefers a
+// vendor-neutral name works without a change here.
+func InstallResolver() bool { return hostenv.InstallResolver() }

@@ -3,6 +3,7 @@ module github.com/go-widgets/android
 go 1.27.2
 
 require (
+	github.com/go-aosp/hostenv v0.1.0
 	github.com/go-widgets/painter v0.17.0
 	github.com/go-widgets/toolkit v0.356.0
 	golang.org/x/sys v0.49.0
