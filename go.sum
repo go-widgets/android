@@ -1,12 +1,12 @@
-github.com/andybalholm/brotli v1.2.8 h1:H9F6r7RNwzSRsx/lytpIYkbjNFMt2yNBwsJ2+0gpx78=
-github.com/andybalholm/brotli v1.2.8/go.mod h1:rzTDkvFWvIrjDXZHkuS16NPggd91W3kUSvPlQ1pLaKY=
+github.com/andybalholm/brotli v1.3.0 h1:IdkhjSe/+34U+fP7FSR2Q6Poj1hnHUa2GoWmzXJd6qY=
+github.com/andybalholm/brotli v1.3.0/go.mod h1:rzTDkvFWvIrjDXZHkuS16NPggd91W3kUSvPlQ1pLaKY=
 github.com/dsnet/compress v0.0.2-0.20230904184137-39efe44ab707 h1:2tV76y6Q9BB+NEBasnqvs7e49aEBFI8ejC89PSnWH+4=
 github.com/dsnet/compress v0.0.2-0.20230904184137-39efe44ab707/go.mod h1:qssHWj60/X5sZFNxpG4HBPDHVqxNm4DfnCKgrbZOT+s=
 github.com/dsnet/golib v0.0.0-20171103203638-1ea166775780/go.mod h1:Lj+Z9rebOhdfkVLjJ8T6VcRQv3SXugXy999NBtR9aFY=
 github.com/go-aosp/hostenv v0.1.0 h1:x7PBoDnOv7mVH0gHp+5lt4KpDnWKaDJUdf+F7d8yLxc=
 github.com/go-aosp/hostenv v0.1.0/go.mod h1:mWc4s7Uu3u7llG9nqLwKeDloRx0Ef/oUBDaNlmQhuzQ=
-github.com/go-crdt/crdt v0.57.0 h1:sNLDTVCEnSb20gm77BUuYav8dzj5krmly/z9O7eRMCo=
-github.com/go-crdt/crdt v0.57.0/go.mod h1:zdVTTDLGV5JYAoTJDqCivcAT+/B5gGebDsVd8QNZpVs=
+github.com/go-crdt/crdt v0.59.0 h1:2gp9+qVo6zN4Y5A6fUKkHufZjJGUJQZ2R4xecDrO0xQ=
+github.com/go-crdt/crdt v0.59.0/go.mod h1:kHlReXEoryOyNeoSZv7GizHHuSZ+DmVi2AuGIRb0jNc=
 github.com/go-gfx/gfx v0.41.0 h1:MVEnory0Zx8ypzuVDrTIWz4Cekv8hn5ilcYg3glJPrk=
 github.com/go-gfx/gfx v0.41.0/go.mod h1:4OenoKrgdht6UXYf5SV8w2tb41hfAdy4QoxJRPsRDz4=
 github.com/go-icons/iconoir v0.3.0 h1:kHG2sU5IsCvtBS1JICuXgfFo5f8UfwY1m7KYMVy97CI=
@@ -29,8 +29,8 @@ github.com/go-widgets/painter v0.17.1 h1:inOmnCGSiHd4oZx7Zm7PJRDWWSEopnEnvDKEeFu
 github.com/go-widgets/painter v0.17.1/go.mod h1:8kERcZUoWNyLIas1NsMWiYynvvyx+hcB2cNIh0Bx0yc=
 github.com/go-widgets/textinput v0.1.0 h1:ifx1RjbPIWtlokoBLV1ZwlH+0CeixoMbswlqhNvYNmw=
 github.com/go-widgets/textinput v0.1.0/go.mod h1:Y/k3PDtUEMQ/4psCVKdmUStNWa/EsVAMcCKG2lEtQ5c=
-github.com/go-widgets/toolkit v0.379.0 h1:JW4uN9lnKKNZU32RGWjGMKieuwyv+L15NEmuwmiksYk=
-github.com/go-widgets/toolkit v0.379.0/go.mod h1:NYwSt10yeWvLUpspTCSLj/JG8oaRezgnPmZTIAO7bHs=
+github.com/go-widgets/toolkit v0.392.0 h1:p7UqUz0lgvl+qYPZDa48YU1c1uScdR5zdXgADSRr3N0=
+github.com/go-widgets/toolkit v0.392.0/go.mod h1:1ks//sTcSYxAGx9G5vZaAtUiJ9EKFITW2siDFRURwcc=
 github.com/go-widgets/vcs v0.1.0 h1:1pZQygSsKBWZepAgsTdqh1bwHBjPwaLM4p7bAAONGnk=
 github.com/go-widgets/vcs v0.1.0/go.mod h1:c2SbtsVVLJUJAf/vOeMKkFWZRFyMAeDrY8rfyUyIevs=
 github.com/google/go-cmp v0.5.5/go.mod h1:v8dTdLbMG2kIc/vJvl+f65V22dbkXbowE6jgT/gNBxE=
